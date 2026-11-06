@@ -431,7 +431,7 @@ rr();render();stats();setInterval(render,1000);
       r[0].docs.forEach(function(d){(d.data().items||[]).forEach(function(x){all.push(x)})});
       r[1].docs.forEach(function(d){
         var x=d.data(),a=x.deleted||{};
-        all.push({at:x.at,by:x.by,act:"Deleted order record",det:(a.name||"")+(a.order?" · order #"+a.order:"")+(a.boxes?" · "+a.boxes+" boxes":"")+(a.end?" · finished "+new Date(a.end).toLocaleString():"")});
+        all.push({at:x.at,by:x.by,act:"Deleted order record by "+who(x.by),det:(byline(a)?byline(a)+" · ":"")+(a.name||"")+(a.order?" · order #"+a.order:"")+(a.boxes?" · "+a.boxes+" boxes":"")+(a.end?" · finished "+new Date(a.end).toLocaleString():"")});
       });
       all.sort(function(x,y){return y.at-x.at});show();
     }).catch(function(e){$("hl").textContent="Could not load history: "+((e&&e.message)||e)});
