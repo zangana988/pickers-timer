@@ -274,6 +274,42 @@ rr();render();stats();setInterval(render,1000);
     };
   });
 })();
+  // Records by day or month
+(function(){
+  var mode="d";
+  $("done").insertAdjacentHTML("afterend",'<h2>Records by day or month</h2><div style="display:flex;gap:8px;margin-bottom:8px"><button type="button" id="vd">By day</button><button type="button" id="vm" class="ghost">By month</button></div><input id="vi" type="date" placeholder="YYYY-MM"><div id="rv"></div>');
+  var vi=$("vi");vi.value=dayStr(new Date());
+  function setMode(m){
+    mode=m;vi.type=m==="d"?"date":"month";
+    vi.value=m==="d"?dayStr(new Date()):dayStr(new Date()).slice(0,7);
+    $("vd").className=m==="d"?"":"ghost";$("vm").className=m==="m"?"":"ghost";rv();
+  }
+  $("vd").onclick=function(){setMode("d")};
+  $("vm").onclick=function(){setMode("m")};
+  vi.onchange=rv;
+  function rv(){
+    var v=vi.value;if(!v){$("rv").innerHTML="";return}
+    var list=S.done.filter(function(a){return dayStr(new Date(a.end)).indexOf(v)===0});
+    if(!list.length){$("rv").innerHTML='<div class="empty">No finished orders for this '+(mode==="d"?"day":"month")+'.</div>';return}
+    var g={};
+    list.forEach(function(a){
+      var r=g[a.name]||(g[a.name]={n:0,b:0,s:0,ok:0,ov:0}),s=(a.end-a.start)/1000;
+      r.n++;r.b+=a.boxes||0;r.s+=s;if(s<=a.mins*60)r.ok++;else r.ov+=s-a.mins*60;
+    });
+    var ns=Object.keys(g).sort(function(x,y){return g[y].n-g[x].n});
+    var h='<div class="sc"><table><tr><th>Picker</th><th>Orders</th><th>Boxes</th><th>Avg min/order</th><th>On time</th><th>Total over</th></tr>'+ns.map(function(n){
+      var r=g[n];
+      return '<tr><td>'+esc(n)+'</td><td>'+r.n+'</td><td>'+r.b+'</td><td>'+(r.s/r.n/60).toFixed(1)+'</td><td>'+Math.round(r.ok/r.n*100)+'%</td><td>'+Math.round(r.ov/60)+' min</td></tr>';
+    }).join("")+'</table></div>';
+    if(mode==="d")h+='<h2>Orders</h2>'+list.map(function(a){
+      var took=a.end-a.start,over=took>a.mins*60000;
+      return '<div class="h"><span>'+esc(a.name)+(a.order?" · #"+esc(a.order):"")+(a.boxes?" · "+a.boxes+" boxes":"")+'<br><span class="meta">'+tm(a.start)+" to "+tm(a.end)+" · given "+a.mins+' min · '+(over?fmt(took-a.mins*60000)+" over":fmt(a.mins*60000-took)+" early")+'</span></span><b class="'+(over?"l":"g")+'">'+fmt(took)+'</b></div>';
+    }).join("");
+    $("rv").innerHTML=h;
+  }
+  var _s=stats;stats=function(){_s();rv()};
+  rv();
+})();
 </script>
 </body>
 </html>
