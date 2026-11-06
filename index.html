@@ -310,6 +310,41 @@ rr();render();stats();setInterval(render,1000);
   var _s=stats;stats=function(){_s();rv()};
   rv();
 })();
+  // Delete wrong orders (supervisor: today only; manager: any day)
+(function(){
+  var ADMIN="mohammedmedht1@gmail.com",me=null,w=document.createElement("div");
+  w.innerHTML='<h2>Delete a wrong order</h2><input id="xd" type="date"><div id="xl"></div>';
+  $("done").insertAdjacentElement("afterend",w);
+  function isAdmin(){return !!me&&(me.email||"").toLowerCase()===ADMIN}
+  function xr(){
+    var v=$("xd").value;
+    if(!isAdmin()||!v)v=dayStr(new Date());
+    $("xd").value=v;$("xd").disabled=!isAdmin();
+    var list=S.done.filter(function(a){return dayStr(new Date(a.end))===v});
+    $("xl").innerHTML=list.length?list.map(function(a){
+      return '<div class="h"><span>'+esc(a.name)+(a.order?" · #"+esc(a.order):"")+(a.boxes?" · "+a.boxes+" boxes":"")+'<br><span class="meta">'+tm(a.start)+" to "+tm(a.end)+'</span></span><button class="ghost" data-x="'+a.id+'" type="button">Delete</button></div>';
+    }).join(""):'<div class="empty">No finished orders on this day.</div>';
+  }
+  $("xd").value=dayStr(new Date());
+  $("xd").onchange=xr;
+  $("xl").onclick=function(e){
+    var b=e.target.closest("button");if(!b||!DB)return;
+    var id=+b.dataset.x,a=S.done.filter(function(o){return o.id===id})[0];if(!a)return;
+    var day=dayStr(new Date(a.end));
+    if(!isAdmin()&&day!==dayStr(new Date())){alert("Only the manager can delete orders from other days.");return}
+    if(!confirm("Delete this order record ("+a.name+(a.order?" #"+a.order:"")+")? This cannot be undone."))return;
+    var ref=DB.doc("hist/"+day+"_"+hk(a.name));
+    ref.get().then(function(s){
+      var it=(s.exists?(s.data().items||[]):[]).filter(function(o){return o.id!==id});
+      return ref.set({day:day,name:a.name,items:it});
+    }).then(function(){
+      return DB.collection("audit").add({by:me.email,at:Date.now(),deleted:a});
+    }).catch(dbe);
+  };
+  firebase.auth().onAuthStateChanged(function(u){me=u;xr()});
+  var _s2=stats;stats=function(){_s2();xr()};
+  xr();
+})();
 </script>
 </body>
 </html>
