@@ -85,7 +85,7 @@ textarea{width:100%;margin-top:8px;font:13px monospace;background:var(--card);co
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script>
-var FIREBASE_CONFIG={apiKey:"PASTE_API_KEY",authDomain:"PASTE_PROJECT_ID.firebaseapp.com",projectId:"PASTE_PROJECT_ID",appId:"PASTE_APP_ID"};
+var FIREBASE_CONFIG={apiKey:"AIzaSyCzS3Szv_JcVMYGQFlz3VmESNLwW1xiL0E",authDomain:"pickers-timer.firebaseapp.com",projectId:"pickers-timer",appId:"1:928812160632:web:eed8ef63a89f7f9f2e3f8d"};
 try{var sv=JSON.parse(localStorage.getItem("fbcfg"));if(sv&&sv.projectId)FIREBASE_CONFIG=sv}catch(e){}
 var S={active:[],done:[],roster:[]};
 function saveRoster(){if(DB)DB.doc("app/roster").set({list:S.roster}).catch(dbe)}
