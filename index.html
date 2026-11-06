@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Picker Timers</title>
+<style>
+:root{--bg:#eef0ee;--card:#fff;--ink:#1b2220;--mute:#66706c;--line:#d5dad7;--ok:#168a3e;--okbg:#e3f4e8;--bad:#c9261b;--badbg:#fde7e5;--btn:#1b2220;--btnink:#fff;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#141816;--card:#1e2421;--ink:#eef2ef;--mute:#9aa6a0;--line:#2f3833;--ok:#43c46e;--okbg:#17301f;--bad:#ff6b5e;--badbg:#3a1a17;--btn:#eef2ef;--btnink:#141816}}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,"Segoe UI",Roboto,Arial,sans-serif}
+main{max-width:1100px;margin:0 auto;padding:16px}
+#active{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px}
+#done{max-width:720px}
+h1{font-size:22px;margin:4px 0 14px}
+h2{font-size:16px;margin:24px 0 8px;color:var(--mute)}
+form{display:grid;grid-template-columns:1fr 1fr;gap:8px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px}
+form .wide{grid-column:1/-1}
+label{font-size:13px;color:var(--mute);display:flex;flex-direction:column;gap:4px}
+input,select{font:inherit;font-size:17px;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);width:100%}
+button{font:inherit;font-weight:600;border:0;border-radius:8px;padding:12px 16px;background:var(--btn);color:var(--btnink);cursor:pointer}
+button.ghost{background:transparent;color:var(--mute);border:1px solid var(--line)}
+.t{border-radius:12px;padding:12px;border:2px solid var(--ok);background:var(--okbg)}
+.t.red{border-color:var(--bad);background:var(--badbg)}
+.t.late{animation:pulse 1s infinite}
+@keyframes pulse{50%{opacity:.6}}
+@media (prefers-reduced-motion:reduce){.t.late{animation:none}}
+.top{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.name{font-size:17px;font-weight:700}
+.meta{font-size:14px;color:var(--mute)}
+.clock{font-size:clamp(38px,11vw,54px);font-weight:700;font-variant-numeric:tabular-nums;color:var(--ok);line-height:1.1;margin:6px 0}
+.red .clock{color:var(--bad)}
+.bar{height:10px;background:var(--line);border-radius:5px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--ok);width:0}
+.red .bar i{background:var(--bad)}
+.row{display:flex;justify-content:space-between;align-items:center;margin-top:10px;gap:8px;flex-wrap:wrap}
+.h{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--line);font-size:15px}
+.h b.l{color:var(--bad)}.h b.g{color:var(--ok)}
+.empty{color:var(--mute);padding:16px 0}
+details{margin-top:8px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+summary{cursor:pointer;font-weight:600}
+.rs{display:flex;gap:8px;margin:10px 0}
+.chip{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--line);border-radius:20px;padding:2px 2px 2px 12px;margin:0 6px 6px 0}
+.chip button{padding:2px 10px;background:transparent;color:var(--mute);font-size:18px}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line)}
+th{color:var(--mute);font-weight:600}
+.sc{overflow-x:auto}
+.seg{display:flex;gap:8px;margin-bottom:8px}
+textarea{width:100%;margin-top:8px;font:13px monospace;background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:8px}
+</style>
+</head>
+<body>
+<main>
+<h1>Picker timers</h1>
+<div id="wn" class="meta" hidden style="color:var(--bad);margin-bottom:8px"></div>
+<form id="cf" hidden><label class="wide">First time on this phone: paste your Firebase settings (copy the whole block from the Firebase website)<textarea id="ct" rows="7"></textarea></label><button class="wide" type="submit">Save settings</button></form>
+<form id="lg" hidden><label class="wide">Email<input id="le" type="email" autocomplete="username" required></label><label class="wide">Password<input id="lp" type="password" autocomplete="current-password" required></label><button class="wide" type="submit">Sign in</button></form>
+<div id="ap" hidden>
+<form id="f">
+  <label class="wide">Picker<select id="n" required></select></label>
+  <label>Order number<input id="o" autocomplete="off" placeholder="e.g. 10452"></label>
+  <label>Number of boxes<input id="b" type="number" min="0" value="0" inputmode="numeric"></label>
+  <label>Box weight (just estimate)<select id="t"><option value="0.7">Mostly light</option><option value="1" selected>Mixed</option><option value="1.4">Mostly heavy</option></select></label>
+  <label>Minutes allowed (change if needed)<input id="m" type="number" min="1" max="600" value="15" required inputmode="numeric"></label>
+  <div class="wide meta" id="sg">Enter the boxes to get a suggested time.</div>
+  <button class="wide" type="submit">Start timer</button>
+</form>
+<details id="mg"><summary>Manage picker list</summary><div class="rs"><input id="rn" placeholder="Add picker name" autocomplete="off"><button type="button" id="ra">Add</button></div><div id="rl"></div></details>
+<h2 id="cnt">In progress</h2>
+<div id="active"></div>
+<h2>Finished today</h2>
+<div id="done"></div>
+<h2>Picker statistics</h2>
+<div class="seg"><button type="button" data-p="3">Last 3 months</button><button type="button" data-p="6">Last 6 months</button></div>
+<div id="st"></div>
+<div class="row"><button type="button" id="cp">Copy data for Excel</button><button type="button" class="ghost" id="dl">Download CSV</button></div>
+<textarea id="ta" rows="8" readonly hidden></textarea>
+<div class="row"><button class="ghost" id="so" type="button">Sign out</button></div>
+</div>
+</main>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script>
+var FIREBASE_CONFIG={apiKey:"PASTE_API_KEY",authDomain:"PASTE_PROJECT_ID.firebaseapp.com",projectId:"PASTE_PROJECT_ID",appId:"PASTE_APP_ID"};
+try{var sv=JSON.parse(localStorage.getItem("fbcfg"));if(sv&&sv.projectId)FIREBASE_CONFIG=sv}catch(e){}
+var S={active:[],done:[],roster:[]};
+function saveRoster(){if(DB)DB.doc("app/roster").set({list:S.roster}).catch(dbe)}
+function $(i){return document.getElementById(i)}
+function pad(n){return String(n).padStart(2,"0")}
+function fmt(ms){var s=Math.floor(Math.abs(ms)/1000),h=Math.floor(s/3600),m=Math.floor(s%3600/60);return (h?h+":"+pad(m):pad(m))+":"+pad(s%60)}
+function tm(t){return new Date(t).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit",second:"2-digit"})}
+function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})}
+$("f").onsubmit=function(e){
+  e.preventDefault();
+  var c=boxes();
+  var o={id:Date.now(),name:$("n").value.trim(),order:$("o").value.trim(),mins:+$("m").value,start:Date.now(),boxes:c[0],est:est(c)};
+  if(!DB){warn("Not connected. Check your internet and sign in.");return}
+  DB.doc("active/"+o.id).set(o).catch(dbe);
+  $("o").value="";$("b").value=0;$("m").value=15;upd();render();
+};
+function finish(id){
+  var i=S.active.findIndex(function(a){return a.id===id});
+  if(i<0)return;
+  if(!DB||fin[id])return;fin[id]=1;
+  var a=Object.assign({},S.active[i]);a.end=Date.now();
+  var ref=DB.doc("hist/"+dayStr(new Date(a.end))+"_"+hk(a.name));
+  ref.get().then(function(s){var it=s.exists?(s.data().items||[]).slice():[];it.push(a);return ref.set({day:dayStr(new Date(a.end)),name:a.name,items:it})}).then(function(){return DB.doc("active/"+id).delete()}).catch(function(e){delete fin[id];dbe(e)});
+}
+function cancel(id){
+  if(!confirm("Remove this timer without saving it?"))return;
+  if(DB)DB.doc("active/"+id).delete().catch(dbe);
+}
+$("active").onclick=function(e){
+  var b=e.target.closest("button");if(!b)return;
+  var id=+b.dataset.id;b.dataset.a==="done"?finish(id):cancel(id);
+};
+function render(){
+  fillSel();var now=Date.now(),h="";
+  var nl=0;
+  S.active.slice().sort(function(x,y){return (x.start+x.mins*60000)-(y.start+y.mins*60000)}).forEach(function(a){
+    var tot=a.mins*60000,left=tot-(now-a.start),late=left<0;
+    var red=late||left<=tot*0.2;if(red)nl++;
+    var pct=Math.min(100,Math.max(0,(now-a.start)/tot*100));
+    h+='<div class="t'+(red?" red":"")+(late?" late":"")+'"><div class="top"><span class="name">'+esc(a.name)+'</span><span class="meta">'+(a.order?"Order "+esc(a.order):"")+(a.boxes?(a.order?" · ":"")+a.boxes+" boxes":"")+'</span></div>'
+    +'<div class="clock">'+(late?"+":"")+fmt(left)+'</div>'
+    +'<div class="bar"><i style="width:'+pct+'%"></i></div>'
+    +'<div class="row"><span class="meta">Started '+tm(a.start)+' · Given '+a.mins+' min'+(late?" · OVER TIME":"")+'</span></div>'
+    +'<div class="row"><button data-a="done" data-id="'+a.id+'">Finished order</button><button class="ghost" data-a="x" data-id="'+a.id+'">Remove</button></div></div>';
+  });
+  $("active").innerHTML=h||'<div class="empty">No one is picking right now. Start a timer above.</div>';
+  $("cnt").textContent="In progress ("+S.active.length+(nl?", "+nl+" red":"")+")";
+  var d="";
+  var t0=new Date().setHours(0,0,0,0);S.done.filter(function(a){return a.end>=t0}).forEach(function(a){
+    var took=a.end-a.start,over=took>a.mins*60000;
+    d+='<div class="h"><span>'+esc(a.name)+(a.order?" · #"+esc(a.order):"")+(a.boxes?" · "+a.boxes+" boxes":"")+'<br><span class="meta">'+tm(a.start)+" to "+tm(a.end)+" · given "+a.mins+' min · '+(over?fmt(took-a.mins*60000)+" over":fmt(a.mins*60000-took)+" early")+'</span></span><b class="'+(over?"l":"g")+'">'+fmt(took)+'</b></div>';
+  });
+  $("done").innerHTML=d||'<div class="empty">Finished orders appear here.</div>';
+}
+var lastKey=null;
+function fillSel(){
+  var busy=S.active.map(function(a){return a.name}),av=S.roster.filter(function(n){return busy.indexOf(n)<0}),key=av.join("|")+"#"+S.roster.length;
+  if(key===lastKey)return;lastKey=key;
+  var s=$("n");
+  s.innerHTML=av.length?'<option value="">Choose picker</option>'+av.map(function(n){return '<option>'+esc(n)+'</option>'}).join(""):'<option value="">'+(S.roster.length?"Everyone is busy":"Add pickers in the list below first")+'</option>';
+}
+function rr(){
+  $("rl").innerHTML=S.roster.map(function(n,i){return '<span class="chip">'+esc(n)+'<button type="button" data-i="'+i+'" aria-label="Remove '+esc(n)+'">×</button></span>'}).join("");
+  if(!S.roster.length)$("mg").open=true;
+  lastKey=null;fillSel();
+}
+function addP(){
+  var v=$("rn").value.trim();if(!v)return;
+  if(S.roster.indexOf(v)<0)S.roster.push(v);
+  S.roster.sort(function(a,b){return a.localeCompare(b)});
+  $("rn").value="";saveRoster();rr();$("rn").focus();
+}
+$("ra").onclick=addP;
+$("rn").onkeydown=function(e){if(e.key==="Enter"){e.preventDefault();addP()}};
+$("rl").onclick=function(e){var b=e.target.closest("button");if(!b)return;S.roster.splice(+b.dataset.i,1);saveRoster();rr()};
+var CART=120;
+function boxes(){return [Math.max(0,Math.floor(+$("b").value||0)),+$("t").value||1]}
+function est(c){
+  var n=c[0],k=c[1];if(!n)return 0;
+  var kg=n*6*k;
+  return 105+n*20+n*30*k+(Math.max(1,Math.ceil(kg/CART))-1)*90;
+}
+function factor(){
+  var r=S.done.filter(function(a){return a.est}).slice(0,20).map(function(a){return (a.end-a.start)/1000/a.est});
+  if(r.length<3)return{f:1,n:r.length};
+  var f=r.reduce(function(x,y){return x+y},0)/r.length;
+  return{f:Math.min(2,Math.max(0.5,f)),n:r.length};
+}
+function upd(){
+  var c=boxes(),n=c[0];
+  if(!n){$("sg").textContent="Enter the boxes to get a suggested time.";return}
+  var F=factor(),m=Math.max(1,Math.ceil(est(c)*F.f*1.15/60));
+  $("m").value=m;
+  $("sg").textContent="Suggested: "+m+" min for "+n+" boxes. "+(F.n>=3?"Adjusted from your last "+F.n+" finished orders.":"Standard estimate; it adapts after 3 finished orders.");
+}
+$("b").oninput=upd;$("t").onchange=upd;
+var per=3;
+function stats(){
+  var from=new Date();from.setMonth(from.getMonth()-per);var g={};
+  S.done.filter(function(a){return a.end>=from.getTime()}).forEach(function(a){
+    var r=g[a.name]||(g[a.name]={n:0,b:0,bs:0,s:0,ok:0,d:0,ov:0,er:0}),s=(a.end-a.start)/1000;
+    r.n++;r.s+=s;if(a.boxes){r.b+=a.boxes;r.bs+=s}if(s<=a.mins*60)r.ok++;var df=a.mins*60-s;r.d+=df;if(df<0)r.ov-=df;else r.er+=df;
+  });
+  var ns=Object.keys(g).sort(function(x,y){return g[y].ok/g[y].n-g[x].ok/g[x].n});
+  $("st").innerHTML=ns.length?'<div class="sc"><table><tr><th>Picker</th><th>Orders</th><th>Avg min/order</th><th>Sec/box</th><th>On time</th><th>Avg early (+) / over (-)</th><th>Total over</th><th>Total early</th></tr>'+ns.map(function(n){var r=g[n];return '<tr><td>'+esc(n)+'</td><td>'+r.n+'</td><td>'+(r.s/r.n/60).toFixed(1)+'</td><td>'+(r.b?Math.round(r.bs/r.b):"-")+'</td><td>'+Math.round(r.ok/r.n*100)+'%</td><td>'+sg(r.d/r.n)+'</td><td>'+Math.round(r.ov/60)+' min</td><td>'+Math.round(r.er/60)+' min</td></tr>'}).join("")+'</table></div>':'<div class="empty">No finished orders in this period yet.</div>';
+  Array.prototype.forEach.call(document.querySelectorAll(".seg button"),function(b){b.className=(+b.dataset.p===per?"":"ghost")});
+}
+document.querySelector(".seg").onclick=function(e){var b=e.target.closest("button");if(!b)return;per=+b.dataset.p;stats()};
+function sg(x){var m=Math.abs(x)/60;return (x>=0?"+":"-")+m.toFixed(1)+" min"}
+function rows(){
+  var h=["Picker","Order","Date","Start","End","Boxes","Allowed min","Actual min","Difference min (+ early, - over)","On time","Sec per box"];
+  return [h].concat(S.done.slice().reverse().map(function(a){
+    var d=new Date(a.start),m=(a.end-a.start)/60000;
+    return [a.name,a.order||"",d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate()),tm(a.start),tm(a.end),a.boxes||"",a.mins,m.toFixed(1),(a.mins-m).toFixed(1),m<=a.mins?"Yes":"No",a.boxes?Math.round(m*60/a.boxes):""];
+  }));
+}
+$("cp").onclick=function(){
+  var t=rows().map(function(r){return r.join("\t")}).join("\n"),ta=$("ta");
+  ta.hidden=false;ta.value=t;ta.focus();ta.select();
+  try{navigator.clipboard.writeText(t)}catch(e){}
+};
+$("dl").onclick=function(){
+  var t=rows().map(function(r){return r.map(function(c){return '"'+String(c).replace(/"/g,'""')+'"'}).join(",")}).join("\n");
+  var a=document.createElement("a");a.href="data:text/csv;charset=utf-8,\uFEFF"+encodeURIComponent(t);a.download="picker-orders.csv";document.body.appendChild(a);a.click();a.remove();
+};
+var DB=null,fin={};
+function warn(m){$("wn").textContent=m;$("wn").hidden=!m}
+function dbe(e){warn("Could not save: "+((e&&e.message)||e))}
+function dayStr(d){return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate())}
+function hk(s){var h=5381;for(var i=0;i<s.length;i++)h=((h<<5)+h+s.charCodeAt(i))>>>0;return h.toString(36)}
+rr();render();stats();setInterval(render,1000);
+(async function(){
+  if(FIREBASE_CONFIG.apiKey.indexOf("PASTE")===0){
+    $("cf").hidden=false;
+    $("cf").onsubmit=function(e){
+      e.preventDefault();var t=$("ct").value,c={},ok2=true;
+      ["apiKey","authDomain","projectId","appId"].forEach(function(k){var m=t.match(new RegExp(k+"[\"']?\\s*:\\s*[\"']([^\"']+)[\"']"));if(m)c[k]=m[1];else ok2=false});
+      if(!ok2){warn("Could not read the settings. Copy the whole block that contains apiKey, authDomain, projectId and appId.");return}
+      try{localStorage.setItem("fbcfg",JSON.stringify(c))}catch(x){}
+      location.reload();
+    };
+    return;
+  }
+  try{firebase.initializeApp(FIREBASE_CONFIG);DB=firebase.firestore()}catch(e){warn("Could not start Firebase. Check the settings.");return}
+  $("lg").onsubmit=function(e){e.preventDefault();firebase.auth().signInWithEmailAndPassword($("le").value.trim(),$("lp").value).then(function(){warn("")}).catch(function(){warn("Sign-in failed. Check the email and password.")})};
+  $("so").onclick=function(){firebase.auth().signOut().then(function(){location.reload()})};
+  await new Promise(function(res){firebase.auth().onAuthStateChanged(function(u){if(u){$("lg").hidden=true;$("ap").hidden=false;res()}else{$("lg").hidden=false;$("ap").hidden=true}})});
+  var tm0=setTimeout(function(){warn("Cannot reach the shared data yet. Showing what was loaded before.")},10000);
+  function ok(){clearTimeout(tm0);warn("")}
+  function er(e){clearTimeout(tm0);warn("Shared data error: "+(e&&e.code))}
+  DB.collection("active").onSnapshot(function(q){S.active=q.docs.map(function(d){return Object.assign({},d.data())});ok();render()},er);
+  DB.doc("app/roster").onSnapshot(function(d){S.roster=d.exists?((d.data().list)||[]).slice():[];ok();rr()},er);
+  var cut=new Date();cut.setDate(cut.getDate()-190);
+  DB.collection("hist").onSnapshot(function(q){
+    var seen={},all=[];
+    q.docs.forEach(function(d){if(d.data().day<dayStr(cut))return;((d.data().items)||[]).forEach(function(a){if(!seen[a.id]){seen[a.id]=1;all.push(a)}})});
+    all.sort(function(x,y){return y.end-x.end});S.done=all;ok();render();stats();
+  },er);
+})();
+</script>
+</body>
+</html>
