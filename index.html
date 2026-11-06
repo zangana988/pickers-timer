@@ -451,6 +451,21 @@ rr();render();stats();setInterval(render,1000);
   b.onclick=function(){location.href=location.pathname+"?v="+Date.now()};
   document.body.appendChild(b);
 })();
+  // Picker statistics in its own window
+(function(){
+  var seg=$("st").previousElementSibling,head=seg.previousElementSibling,exp=$("cp").parentNode,ta=$("ta");
+  var md=document.createElement("div");md.hidden=true;
+  md.style.cssText="position:fixed;top:0;right:0;bottom:0;left:0;z-index:50;background:var(--bg);color:var(--ink);overflow:auto;padding:calc(16px + env(safe-area-inset-top,0px)) 16px calc(16px + env(safe-area-inset-bottom,0px))";
+  md.innerHTML='<div style="max-width:900px;margin:0 auto"><div class="row" style="margin:0 0 10px"><h1 style="margin:0">Picker statistics</h1><button id="sc" type="button" class="ghost">Close</button></div><div id="sbody"></div></div>';
+  document.body.appendChild(md);
+  head.remove();
+  var body=$("sbody");body.appendChild(seg);body.appendChild($("st"));body.appendChild(exp);body.appendChild(ta);
+  var w=document.createElement("div");w.className="row";
+  w.innerHTML='<button id="sb" type="button">Picker statistics</button>';
+  $("so").parentNode.insertAdjacentElement("afterend",w);
+  $("sb").onclick=function(){md.hidden=false;document.body.style.overflow="hidden";stats()};
+  $("sc").onclick=function(){md.hidden=true;document.body.style.overflow=""};
+})();
 </script>
 </body>
 </html>
