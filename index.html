@@ -101,6 +101,11 @@ var MGR="mohammedmedht1@gmail.com";
 function who(e){if(!e)return "unknown";var l=String(e).toLowerCase();return String(e).split("@")[0]+(l===MGR?" (Manager)":" (Supervisor)")}
 function me(){var u=firebase.auth().currentUser;return u?u.email:""}
 function byline(a){return (a.by?"Assigned by "+who(a.by):"")+(a.doneBy?(a.by?" · ":"")+"Finished by "+who(a.doneBy):"")}
+function lg(act,det){
+  var u=firebase.auth().currentUser;if(!DB||!u)return;
+  var now=Date.now();
+  DB.doc("log/"+dayStr(new Date(now))).set({items:firebase.firestore.FieldValue.arrayUnion({at:now,by:u.email,act:act,det:det||""})},{merge:true}).catch(function(e){warn("History not saved: "+((e&&e.message)||e))});
+}
 $("f").onsubmit=function(e){
   e.preventDefault();
   var c=boxes();
@@ -226,7 +231,7 @@ $("dl").onclick=function(){
 };
 var DB=null,fin={};
 function warn(m){$("wn").textContent=m;$("wn").hidden=!m}
-function dbe(e){warn("Could not save: "+(e&&e.code==="invalid_argument"?"you are not signed in or do not have permission.":(e&&e.message)||e))}
+function dbe(e){var m="Could not save: "+((e&&e.message)||e);warn(m);alert(m)}
 function dayStr(d){return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate())}
 function hk(s){var h=5381;for(var i=0;i<s.length;i++)h=((h<<5)+h+s.charCodeAt(i))>>>0;return h.toString(36)}
 rr();render();stats();setInterval(render,1000);
@@ -353,7 +358,7 @@ rr();render();stats();setInterval(render,1000);
       var it=(s.exists?(s.data().items||[]):[]).filter(function(o){return o.id!==id});
       return ref.set({day:day,name:a.name,items:it});
     }).then(function(){
-      return DB.collection("audit").add({by:me.email,at:Date.now(),deleted:a});
+      lg("Deleted order record","Deleted by "+who(me.email)+" · "+(byline(a)?byline(a)+" · ":"")+a.name+(a.order?" · order #"+a.order:"")+(a.boxes?" · "+a.boxes+" boxes":"")+" · finished "+new Date(a.end).toLocaleString());
     }).catch(dbe);
   };
   firebase.auth().onAuthStateChanged(function(u){me=u;xr()});
@@ -364,11 +369,6 @@ rr();render();stats();setInterval(render,1000);
 (function(){
   var ADMIN="mohammedmedht1@gmail.com",ME=null,pl=false,all=[],ct0=0;
   function isAdmin(){return !!ME&&(ME.email||"").toLowerCase()===ADMIN}
-  function lg(act,det){
-    if(!DB||!ME)return;
-    var now=Date.now();
-    DB.doc("log/"+dayStr(new Date(now))).set({items:firebase.firestore.FieldValue.arrayUnion({at:now,by:ME.email,act:act,det:det||""})},{merge:true}).catch(function(){});
-  }
   var os=$("f").onsubmit;
   $("f").onsubmit=function(e){
     var n=$("n").value.trim(),o=$("o").value.trim(),b=$("b").value,m=$("m").value;
@@ -415,7 +415,7 @@ rr();render();stats();setInterval(render,1000);
     shown.forEach(function(x){
       var d=dayStr(new Date(x.at));
       if(d!==last){h+='<h2>'+d+'</h2>';last=d}
-      h+='<div class="h"><span><b>'+esc(x.act)+'</b><br><span class="meta">'+esc(x.det||"")+'</span></span><span class="meta" style="text-align:right">'+tm(x.at)+'<br>'+esc(who(x.by))+'</span></div>';
+      h+='<div class="h"><span><b>'+esc(x.act)+'</b><br><span class="meta">By '+esc(who(x.by))+'</span><br><span class="meta">'+esc(x.det||"")+'</span></span><span class="meta" style="text-align:right">'+tm(x.at)+'</span></div>';
     });
     $("hl").textContent=list.length+" actions"+(list.length>shown.length?" (showing the newest 1000, use search)":"");
     $("hr").innerHTML=h||'<div class="empty">Nothing recorded for this search.</div>';
@@ -425,7 +425,7 @@ rr();render();stats();setInterval(render,1000);
     var c=new Date();c.setDate(c.getDate()-190);ct0=c.getTime();
     Promise.all([
       DB.collection("log").where(firebase.firestore.FieldPath.documentId(),">=",dayStr(c)).get(),
-      DB.collection("audit").get()
+      DB.collection("audit").get().catch(function(){return{docs:[]}})
     ]).then(function(r){
       all=[];
       r[0].docs.forEach(function(d){(d.data().items||[]).forEach(function(x){all.push(x)})});
@@ -447,5 +447,3 @@ rr();render();stats();setInterval(render,1000);
 </script>
 </body>
 </html>
-
-    
