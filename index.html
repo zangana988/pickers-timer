@@ -87,26 +87,33 @@ textarea{width:100%;margin-top:8px;font:13px monospace;background:var(--card);co
 <script>
 var FIREBASE_CONFIG={apiKey:"AIzaSyCzS3Szv_JcVMYGQFlz3VmESNLwW1xiL0E",authDomain:"pickers-timer.firebaseapp.com",projectId:"pickers-timer",appId:"1:928812160632:web:eed8ef63a89f7f9f2e3f8d"};
 try{var sv=JSON.parse(localStorage.getItem("fbcfg"));if(sv&&sv.projectId)FIREBASE_CONFIG=sv}catch(e){}
-var S={active:[],done:[],roster:[]};
+var KEY="pickerTimers.v1",S={active:[],done:[]};
+
+if(!S.roster)S.roster=[];
 function saveRoster(){if(DB)DB.doc("app/roster").set({list:S.roster}).catch(dbe)}
+function save(){}
 function $(i){return document.getElementById(i)}
 function pad(n){return String(n).padStart(2,"0")}
 function fmt(ms){var s=Math.floor(Math.abs(ms)/1000),h=Math.floor(s/3600),m=Math.floor(s%3600/60);return (h?h+":"+pad(m):pad(m))+":"+pad(s%60)}
 function tm(t){return new Date(t).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit",second:"2-digit"})}
 function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})}
+var MGR="mohammedmedht1@gmail.com";
+function who(e){if(!e)return "unknown";var l=String(e).toLowerCase();return String(e).split("@")[0]+(l===MGR?" (Manager)":" (Supervisor)")}
+function me(){var u=firebase.auth().currentUser;return u?u.email:""}
+function byline(a){return (a.by?"Assigned by "+who(a.by):"")+(a.doneBy?(a.by?" · ":"")+"Finished by "+who(a.doneBy):"")}
 $("f").onsubmit=function(e){
   e.preventDefault();
   var c=boxes();
-  var o={id:Date.now(),name:$("n").value.trim(),order:$("o").value.trim(),mins:+$("m").value,start:Date.now(),boxes:c[0],est:est(c)};
+  var o={id:Date.now(),name:$("n").value.trim(),order:$("o").value.trim(),mins:+$("m").value,start:Date.now(),boxes:c[0],est:est(c),by:me()};
   if(!DB){warn("Not connected. Check your internet and sign in.");return}
   DB.doc("active/"+o.id).set(o).catch(dbe);
-  $("o").value="";$("b").value=0;$("m").value=15;upd();render();
+  $("o").value="";$("b").value=0;$("m").value=15;upd();save();render();
 };
 function finish(id){
   var i=S.active.findIndex(function(a){return a.id===id});
   if(i<0)return;
   if(!DB||fin[id])return;fin[id]=1;
-  var a=Object.assign({},S.active[i]);a.end=Date.now();
+  var a=Object.assign({},S.active[i]);a.end=Date.now();a.doneBy=me();
   var ref=DB.doc("hist/"+dayStr(new Date(a.end))+"_"+hk(a.name));
   ref.get().then(function(s){var it=s.exists?(s.data().items||[]).slice():[];it.push(a);return ref.set({day:dayStr(new Date(a.end)),name:a.name,items:it})}).then(function(){return DB.doc("active/"+id).delete()}).catch(function(e){delete fin[id];dbe(e)});
 }
@@ -114,6 +121,7 @@ function cancel(id){
   if(!confirm("Remove this timer without saving it?"))return;
   if(DB)DB.doc("active/"+id).delete().catch(dbe);
 }
+
 $("active").onclick=function(e){
   var b=e.target.closest("button");if(!b)return;
   var id=+b.dataset.id;b.dataset.a==="done"?finish(id):cancel(id);
@@ -128,7 +136,7 @@ function render(){
     h+='<div class="t'+(red?" red":"")+(late?" late":"")+'"><div class="top"><span class="name">'+esc(a.name)+'</span><span class="meta">'+(a.order?"Order "+esc(a.order):"")+(a.boxes?(a.order?" · ":"")+a.boxes+" boxes":"")+'</span></div>'
     +'<div class="clock">'+(late?"+":"")+fmt(left)+'</div>'
     +'<div class="bar"><i style="width:'+pct+'%"></i></div>'
-    +'<div class="row"><span class="meta">Started '+tm(a.start)+' · Given '+a.mins+' min'+(late?" · OVER TIME":"")+'</span></div>'
+    +'<div class="row"><span class="meta">Started '+tm(a.start)+' · Given '+a.mins+' min'+(late?" · OVER TIME":"")+'</span></div>'+(a.by?'<div class="meta">Assigned by '+esc(who(a.by))+'</div>':'')
     +'<div class="row"><button data-a="done" data-id="'+a.id+'">Finished order</button><button class="ghost" data-a="x" data-id="'+a.id+'">Remove</button></div></div>';
   });
   $("active").innerHTML=h||'<div class="empty">No one is picking right now. Start a timer above.</div>';
@@ -136,7 +144,7 @@ function render(){
   var d="";
   var t0=new Date().setHours(0,0,0,0);S.done.filter(function(a){return a.end>=t0}).forEach(function(a){
     var took=a.end-a.start,over=took>a.mins*60000;
-    d+='<div class="h"><span>'+esc(a.name)+(a.order?" · #"+esc(a.order):"")+(a.boxes?" · "+a.boxes+" boxes":"")+'<br><span class="meta">'+tm(a.start)+" to "+tm(a.end)+" · given "+a.mins+' min · '+(over?fmt(took-a.mins*60000)+" over":fmt(a.mins*60000-took)+" early")+'</span></span><b class="'+(over?"l":"g")+'">'+fmt(took)+'</b></div>';
+    d+='<div class="h"><span>'+esc(a.name)+(a.order?" · #"+esc(a.order):"")+(a.boxes?" · "+a.boxes+" boxes":"")+'<br><span class="meta">'+tm(a.start)+" to "+tm(a.end)+" · given "+a.mins+' min · '+(over?fmt(took-a.mins*60000)+" over":fmt(a.mins*60000-took)+" early")+(byline(a)?'<br>'+esc(byline(a)):'')+'</span></span><b class="'+(over?"l":"g")+'">'+fmt(took)+'</b></div>';
   });
   $("done").innerHTML=d||'<div class="empty">Finished orders appear here.</div>';
 }
@@ -161,7 +169,8 @@ function addP(){
 $("ra").onclick=addP;
 $("rn").onkeydown=function(e){if(e.key==="Enter"){e.preventDefault();addP()}};
 $("rl").onclick=function(e){var b=e.target.closest("button");if(!b)return;S.roster.splice(+b.dataset.i,1);saveRoster();rr()};
-var CART=120;
+// Time estimate: setup + walking in a ~2,000 m2 warehouse + handling per box weight class + extra trips when cart is full
+var KG=[1,6,15],SEC=[15,25,45],CART=120;
 function boxes(){return [Math.max(0,Math.floor(+$("b").value||0)),+$("t").value||1]}
 function est(c){
   var n=c[0],k=c[1];if(!n)return 0;
@@ -196,10 +205,10 @@ function stats(){
 document.querySelector(".seg").onclick=function(e){var b=e.target.closest("button");if(!b)return;per=+b.dataset.p;stats()};
 function sg(x){var m=Math.abs(x)/60;return (x>=0?"+":"-")+m.toFixed(1)+" min"}
 function rows(){
-  var h=["Picker","Order","Date","Start","End","Boxes","Allowed min","Actual min","Difference min (+ early, - over)","On time","Sec per box"];
+  var h=["Picker","Order","Date","Start","End","Boxes","Allowed min","Actual min","Difference min (+ early, - over)","On time","Sec per box","Assigned by","Finished by"];
   return [h].concat(S.done.slice().reverse().map(function(a){
     var d=new Date(a.start),m=(a.end-a.start)/60000;
-    return [a.name,a.order||"",d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate()),tm(a.start),tm(a.end),a.boxes||"",a.mins,m.toFixed(1),(a.mins-m).toFixed(1),m<=a.mins?"Yes":"No",a.boxes?Math.round(m*60/a.boxes):""];
+    return [a.name,a.order||"",d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate()),tm(a.start),tm(a.end),a.boxes||"",a.mins,m.toFixed(1),(a.mins-m).toFixed(1),m<=a.mins?"Yes":"No",a.boxes?Math.round(m*60/a.boxes):"",a.by||"",a.doneBy||""];
   }));
 }
 $("cp").onclick=function(){
@@ -209,11 +218,15 @@ $("cp").onclick=function(){
 };
 $("dl").onclick=function(){
   var t=rows().map(function(r){return r.map(function(c){return '"'+String(c).replace(/"/g,'""')+'"'}).join(",")}).join("\n");
-  var a=document.createElement("a");a.href="data:text/csv;charset=utf-8,\uFEFF"+encodeURIComponent(t);a.download="picker-orders.csv";document.body.appendChild(a);a.click();a.remove();
+  (window.claude?claude.use("downloads"):Promise.resolve(null)).then(function(dl){
+    if(dl){dl.save({filename:"picker-orders.csv",data:"\uFEFF"+t}).catch(function(){});return}
+    var a=document.createElement("a");a.href="data:text/csv;charset=utf-8,\uFEFF"+encodeURIComponent(t);a.download="picker-orders.csv";document.body.appendChild(a);a.click();a.remove();
+  });return;var a;
+  document.body.appendChild(a);a.click();a.remove();
 };
 var DB=null,fin={};
 function warn(m){$("wn").textContent=m;$("wn").hidden=!m}
-function dbe(e){warn("Could not save: "+((e&&e.message)||e))}
+function dbe(e){warn("Could not save: "+(e&&e.code==="invalid_argument"?"you are not signed in or do not have permission.":(e&&e.message)||e))}
 function dayStr(d){return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate())}
 function hk(s){var h=5381;for(var i=0;i<s.length;i++)h=((h<<5)+h+s.charCodeAt(i))>>>0;return h.toString(36)}
 rr();render();stats();setInterval(render,1000);
@@ -245,7 +258,7 @@ rr();render();stats();setInterval(render,1000);
     all.sort(function(x,y){return y.end-x.end});S.done=all;ok();render();stats();
   },er);
 })();
-  // Clear records (manager only)
+// Clear records (manager only)
 (function(){
   var ADMIN="mohammedmedht1@gmail.com";
   firebase.auth().onAuthStateChanged(function(u){
@@ -274,7 +287,7 @@ rr();render();stats();setInterval(render,1000);
     };
   });
 })();
-  // Records by day or month
+// Records by day or month
 (function(){
   var mode="d";
   $("done").insertAdjacentHTML("afterend",'<h2>Records by day or month</h2><div style="display:flex;gap:8px;margin-bottom:8px"><button type="button" id="vd">By day</button><button type="button" id="vm" class="ghost">By month</button></div><input id="vi" type="date" placeholder="YYYY-MM"><div id="rv"></div>');
@@ -301,16 +314,18 @@ rr();render();stats();setInterval(render,1000);
       var r=g[n];
       return '<tr><td>'+esc(n)+'</td><td>'+r.n+'</td><td>'+r.b+'</td><td>'+(r.s/r.n/60).toFixed(1)+'</td><td>'+Math.round(r.ok/r.n*100)+'%</td><td>'+Math.round(r.ov/60)+' min</td></tr>';
     }).join("")+'</table></div>';
+    var gs={};list.forEach(function(a){var k=a.by||"unknown",r=gs[k]||(gs[k]={n:0,b:0});r.n++;r.b+=a.boxes||0});
+    h+='<h2>Orders assigned by</h2><div class="sc"><table><tr><th>Assigned by</th><th>Orders</th><th>Boxes</th></tr>'+Object.keys(gs).map(function(k){return '<tr><td>'+esc(k==="unknown"?"Not recorded":who(k))+'</td><td>'+gs[k].n+'</td><td>'+gs[k].b+'</td></tr>'}).join("")+'</table></div>';
     if(mode==="d")h+='<h2>Orders</h2>'+list.map(function(a){
       var took=a.end-a.start,over=took>a.mins*60000;
-      return '<div class="h"><span>'+esc(a.name)+(a.order?" · #"+esc(a.order):"")+(a.boxes?" · "+a.boxes+" boxes":"")+'<br><span class="meta">'+tm(a.start)+" to "+tm(a.end)+" · given "+a.mins+' min · '+(over?fmt(took-a.mins*60000)+" over":fmt(a.mins*60000-took)+" early")+'</span></span><b class="'+(over?"l":"g")+'">'+fmt(took)+'</b></div>';
+      return '<div class="h"><span>'+esc(a.name)+(a.order?" · #"+esc(a.order):"")+(a.boxes?" · "+a.boxes+" boxes":"")+'<br><span class="meta">'+tm(a.start)+" to "+tm(a.end)+" · given "+a.mins+' min · '+(over?fmt(took-a.mins*60000)+" over":fmt(a.mins*60000-took)+" early")+(byline(a)?'<br>'+esc(byline(a)):'')+'</span></span><b class="'+(over?"l":"g")+'">'+fmt(took)+'</b></div>';
     }).join("");
     $("rv").innerHTML=h;
   }
   var _s=stats;stats=function(){_s();rv()};
   rv();
 })();
-  // Delete wrong orders (supervisor: today only; manager: any day)
+// Delete wrong orders (supervisor: today only; manager: any day)
 (function(){
   var ADMIN="mohammedmedht1@gmail.com",me=null,w=document.createElement("div");
   w.innerHTML='<h2>Delete a wrong order</h2><input id="xd" type="date"><div id="xl"></div>';
@@ -322,7 +337,7 @@ rr();render();stats();setInterval(render,1000);
     $("xd").value=v;$("xd").disabled=!isAdmin();
     var list=S.done.filter(function(a){return dayStr(new Date(a.end))===v});
     $("xl").innerHTML=list.length?list.map(function(a){
-      return '<div class="h"><span>'+esc(a.name)+(a.order?" · #"+esc(a.order):"")+(a.boxes?" · "+a.boxes+" boxes":"")+'<br><span class="meta">'+tm(a.start)+" to "+tm(a.end)+'</span></span><button class="ghost" data-x="'+a.id+'" type="button">Delete</button></div>';
+      return '<div class="h"><span>'+esc(a.name)+(a.order?" · #"+esc(a.order):"")+(a.boxes?" · "+a.boxes+" boxes":"")+'<br><span class="meta">'+tm(a.start)+" to "+tm(a.end)+(byline(a)?'<br>'+esc(byline(a)):'')+'</span></span><button class="ghost" data-x="'+a.id+'" type="button">Delete</button></div>';
     }).join(""):'<div class="empty">No finished orders on this day.</div>';
   }
   $("xd").value=dayStr(new Date());
@@ -345,6 +360,92 @@ rr();render();stats();setInterval(render,1000);
   var _s2=stats;stats=function(){_s2();xr()};
   xr();
 })();
+// History log (activity record, manager only window)
+(function(){
+  var ADMIN="mohammedmedht1@gmail.com",ME=null,pl=false,all=[],ct0=0;
+  function isAdmin(){return !!ME&&(ME.email||"").toLowerCase()===ADMIN}
+  function lg(act,det){
+    if(!DB||!ME)return;
+    var now=Date.now();
+    DB.doc("log/"+dayStr(new Date(now))).set({items:firebase.firestore.FieldValue.arrayUnion({at:now,by:ME.email,act:act,det:det||""})},{merge:true}).catch(function(){});
+  }
+  var os=$("f").onsubmit;
+  $("f").onsubmit=function(e){
+    var n=$("n").value.trim(),o=$("o").value.trim(),b=$("b").value,m=$("m").value;
+    var r=os.call(this,e);
+    if(n)lg("Assigned order (timer started)",n+(o?" · order #"+o:"")+" · "+(+b||0)+" boxes · "+m+" min given");
+    return r;
+  };
+  var _fin=finish;
+  finish=function(id){
+    var a=S.active.filter(function(x){return x.id===id})[0],ok=a&&DB&&!fin[id];
+    _fin(id);
+    if(ok){var took=Date.now()-a.start;lg("Finished order",a.name+(a.order?" · order #"+a.order:"")+" · "+fmt(took)+(took>a.mins*60000?" ("+fmt(took-a.mins*60000)+" over)":" ("+fmt(a.mins*60000-took)+" early)"))}
+  };
+  cancel=function(id){
+    var a=S.active.filter(function(x){return x.id===id})[0];
+    if(!confirm("Remove this timer without saving it?"))return;
+    if(DB)DB.doc("active/"+id).delete().catch(dbe);
+    if(a)lg("Removed timer (not saved)",a.name+(a.order?" · order #"+a.order:""));
+  };
+  var lr=[],_sr=saveRoster,_rr=rr;
+  rr=function(){_rr();lr=S.roster.slice()};
+  saveRoster=function(){
+    S.roster.forEach(function(n){if(lr.indexOf(n)<0)lg("Added picker",n)});
+    lr.forEach(function(n){if(S.roster.indexOf(n)<0)lg("Removed picker",n)});
+    lr=S.roster.slice();_sr();
+  };
+  var _al=window.alert;
+  window.alert=function(m){
+    if(String(m).indexOf("All finished records were deleted")===0)lg("Cleared ALL finished records","");
+    return _al.apply(window,arguments);
+  };
+  $("lg").addEventListener("submit",function(){pl=true});
+  var hw=document.createElement("div");hw.className="row";hw.hidden=true;
+  hw.innerHTML='<button id="hb" type="button">History (last 6 months)</button>';
+  $("so").parentNode.insertAdjacentElement("afterend",hw);
+  var md=document.createElement("div");md.hidden=true;
+  md.style.cssText="position:fixed;top:0;right:0;bottom:0;left:0;z-index:50;background:var(--bg);color:var(--ink);overflow:auto;padding:calc(16px + env(safe-area-inset-top,0px)) 16px calc(16px + env(safe-area-inset-bottom,0px))";
+  md.innerHTML='<div style="max-width:720px;margin:0 auto"><div class="row" style="margin:0 0 10px"><h1 style="margin:0">History</h1><button id="hc" type="button" class="ghost">Close</button></div><input id="hq" placeholder="Search name, action or person" autocomplete="off"><div id="hl" class="meta" style="margin:8px 0">Loading...</div><div id="hr"></div></div>';
+  document.body.appendChild(md);
+  function show(){
+    var q=($("hq").value||"").toLowerCase(),h="",last="";
+    var list=all.filter(function(x){return x.at>=ct0&&(!q||(x.by+" "+x.act+" "+x.det).toLowerCase().indexOf(q)>=0)});
+    var shown=list.slice(0,1000);
+    shown.forEach(function(x){
+      var d=dayStr(new Date(x.at));
+      if(d!==last){h+='<h2>'+d+'</h2>';last=d}
+      h+='<div class="h"><span><b>'+esc(x.act)+'</b><br><span class="meta">'+esc(x.det||"")+'</span></span><span class="meta" style="text-align:right">'+tm(x.at)+'<br>'+esc(who(x.by))+'</span></div>';
+    });
+    $("hl").textContent=list.length+" actions"+(list.length>shown.length?" (showing the newest 1000, use search)":"");
+    $("hr").innerHTML=h||'<div class="empty">Nothing recorded for this search.</div>';
+  }
+  function load(){
+    $("hl").textContent="Loading...";$("hr").innerHTML="";
+    var c=new Date();c.setDate(c.getDate()-190);ct0=c.getTime();
+    Promise.all([
+      DB.collection("log").where(firebase.firestore.FieldPath.documentId(),">=",dayStr(c)).get(),
+      DB.collection("audit").get()
+    ]).then(function(r){
+      all=[];
+      r[0].docs.forEach(function(d){(d.data().items||[]).forEach(function(x){all.push(x)})});
+      r[1].docs.forEach(function(d){
+        var x=d.data(),a=x.deleted||{};
+        all.push({at:x.at,by:x.by,act:"Deleted order record",det:(a.name||"")+(a.order?" · order #"+a.order:"")+(a.boxes?" · "+a.boxes+" boxes":"")+(a.end?" · finished "+new Date(a.end).toLocaleString():"")});
+      });
+      all.sort(function(x,y){return y.at-x.at});show();
+    }).catch(function(e){$("hl").textContent="Could not load history: "+((e&&e.message)||e)});
+  }
+  $("hb").onclick=function(){md.hidden=false;document.body.style.overflow="hidden";load()};
+  $("hc").onclick=function(){md.hidden=true;document.body.style.overflow=""};
+  $("hq").oninput=show;
+  firebase.auth().onAuthStateChanged(function(u){
+    ME=u;hw.hidden=!isAdmin();
+    if(u&&pl){pl=false;lg("Signed in","")}
+  });
+})();
 </script>
 </body>
 </html>
+
+    
