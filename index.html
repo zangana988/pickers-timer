@@ -561,6 +561,14 @@ rr();render();stats();setInterval(render,1000);
     }
   });
 })();
+  // Show who is signed in
+(function(){
+  var d=document.createElement("div");d.id="whoami";d.className="meta";d.style.cssText="margin:-8px 0 12px;font-weight:600";d.hidden=true;
+  document.querySelector("main h1").insertAdjacentElement("afterend",d);
+  firebase.auth().onAuthStateChanged(function(u){
+    if(u){d.textContent="Signed in: "+who(u.email);d.hidden=false}else{d.hidden=true}
+  });
+})();
 </script>
 </body>
 </html>
