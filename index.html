@@ -58,6 +58,9 @@ textarea{width:100%;margin-top:8px;font:13px monospace;background:var(--card);co
 <div id="wn" class="meta" hidden style="color:var(--bad);margin-bottom:8px"></div>
 <form id="cf" hidden><label class="wide">First time on this phone: paste your Firebase settings (copy the whole block from the Firebase website)<textarea id="ct" rows="7"></textarea></label><button class="wide" type="submit">Save settings</button></form>
 <form id="lg" hidden><label class="wide">Email<input id="le" type="email" autocomplete="username" required></label><label class="wide">Password<input id="lp" type="password" autocomplete="current-password" required></label><button class="wide" type="submit">Sign in</button></form>
+<div id="lk" class="row" hidden><button class="ghost" id="lreg" type="button">First time? Create my password</button><button class="ghost" id="lfp" type="button">Forgot password</button></div>
+<form id="rg" hidden><label class="wide">Your email (the one the manager added)<input id="re" type="email" autocomplete="username" required></label><label class="wide">Choose your password (8 or more characters)<input id="rp" type="password" autocomplete="new-password" required></label><label class="wide">Repeat the password<input id="rq" type="password" autocomplete="new-password" required></label><button class="wide" type="submit">Create my account</button><button class="wide ghost" id="rbk" type="button">Back to sign in</button></form>
+<div id="gt" hidden><div id="gm" class="meta" style="margin:8px 0"></div><div class="row"><button id="gc" type="button">Check again</button><button class="ghost" id="gr" type="button">Resend email</button><button class="ghost" id="gs" type="button">Sign out</button></div></div>
 <div id="ap" hidden>
 <form id="f">
   <label class="wide">Picker<select id="n" required></select></label>
@@ -248,20 +251,61 @@ rr();render();stats();setInterval(render,1000);
     return;
   }
   try{firebase.initializeApp(FIREBASE_CONFIG);DB=firebase.firestore()}catch(e){warn("Could not start Firebase. Check the settings.");return}
+  var started=false;
+  function view(v){$("lg").hidden=v!=="login";$("lk").hidden=v!=="login";$("rg").hidden=v!=="reg";$("gt").hidden=v!=="gate";$("ap").hidden=v!=="app"}
+  function out(){firebase.auth().signOut().then(function(){location.reload()})}
   $("lg").onsubmit=function(e){e.preventDefault();firebase.auth().signInWithEmailAndPassword($("le").value.trim(),$("lp").value).then(function(){warn("")}).catch(function(){warn("Sign-in failed. Check the email and password.")})};
-  $("so").onclick=function(){firebase.auth().signOut().then(function(){location.reload()})};
-  await new Promise(function(res){firebase.auth().onAuthStateChanged(function(u){if(u){$("lg").hidden=true;$("ap").hidden=false;res()}else{$("lg").hidden=false;$("ap").hidden=true}})});
-  var tm0=setTimeout(function(){warn("Cannot reach the shared data yet. Showing what was loaded before.")},10000);
-  function ok(){clearTimeout(tm0);warn("")}
-  function er(e){clearTimeout(tm0);warn("Shared data error: "+(e&&e.code))}
-  DB.collection("active").onSnapshot(function(q){S.active=q.docs.map(function(d){return Object.assign({},d.data())});ok();render()},er);
-  DB.doc("app/roster").onSnapshot(function(d){S.roster=d.exists?((d.data().list)||[]).slice():[];ok();rr()},er);
-  var cut=new Date();cut.setDate(cut.getDate()-190);
-  DB.collection("hist").onSnapshot(function(q){
-    var seen={},all=[];
-    q.docs.forEach(function(d){if(d.data().day<dayStr(cut))return;((d.data().items)||[]).forEach(function(a){if(!seen[a.id]){seen[a.id]=1;all.push(a)}})});
-    all.sort(function(x,y){return y.end-x.end});S.done=all;ok();render();stats();
-  },er);
+  $("so").onclick=out;$("gs").onclick=out;
+  $("lreg").onclick=function(){warn("");view("reg")};
+  $("rbk").onclick=function(){warn("");view("login")};
+  $("lfp").onclick=function(){
+    var em=$("le").value.trim();
+    if(!em){warn("Type your email in the Email box first, then tap Forgot password.");return}
+    firebase.auth().sendPasswordResetEmail(em).then(function(){warn("If this email has an account, a link to set a new password was sent. Check your inbox and spam.")}).catch(function(){warn("Could not send the email. Check the address.")});
+  };
+  $("rg").onsubmit=function(e){
+    e.preventDefault();
+    var em=$("re").value.trim().toLowerCase(),p1=$("rp").value,p2=$("rq").value;
+    if(p1.length<8){warn("The password must have at least 8 characters.");return}
+    if(p1!==p2){warn("The two passwords do not match.");return}
+    firebase.auth().createUserWithEmailAndPassword(em,p1).then(function(c){return c.user.sendEmailVerification()}).then(function(){warn("")}).catch(function(x){
+      var c=x&&x.code;
+      warn(c==="auth/email-already-in-use"?"This email already has an account. Go back and use Sign in or Forgot password.":c==="auth/admin-restricted-operation"?"Registration is switched off in Firebase. Ask the manager.":"Could not create the account: "+((x&&x.message)||x));
+    });
+  };
+  $("gr").onclick=function(){
+    var u=firebase.auth().currentUser;if(!u)return;
+    u.sendEmailVerification().then(function(){warn("Verification email sent again. Check your inbox and spam.")}).catch(function(x){warn("Could not send: "+((x&&x.message)||x))});
+  };
+  $("gc").onclick=function(){
+    var u=firebase.auth().currentUser;if(!u)return;
+    u.reload().then(function(){return u.getIdToken(true)}).then(function(){gate(firebase.auth().currentUser)});
+  };
+  function noAccess(u,msg){$("gm").textContent=msg;$("gr").hidden=!!u.emailVerified;view("gate")}
+  function gate(u){
+    if(!u){view("login");return}
+    if((u.email||"").toLowerCase()===MGR){go();view("app");return}
+    if(!u.emailVerified){noAccess(u,"Please verify your email ("+u.email+"). Open the link in the email we sent you, then tap Check again.");return}
+    var na="Your email ("+u.email+") is not approved yet. Ask the manager to add it under Staff access, then tap Check again.";
+    DB.doc("staff/"+u.email.toLowerCase()).get().then(function(s){
+      if(s.exists){go();view("app")}else noAccess(u,na);
+    }).catch(function(){noAccess(u,na)});
+  }
+  firebase.auth().onAuthStateChanged(gate);
+  function go(){
+    if(started)return;started=true;
+    var tm0=setTimeout(function(){warn("Cannot reach the shared data yet. Showing what was loaded before.")},10000);
+    function ok(){clearTimeout(tm0);warn("")}
+    function er(e){clearTimeout(tm0);warn(e&&e.code==="permission-denied"?"Access denied. Ask the manager to check your access, then sign out and in.":"Shared data error: "+(e&&e.code))}
+    DB.collection("active").onSnapshot(function(q){S.active=q.docs.map(function(d){return Object.assign({},d.data())});ok();render()},er);
+    DB.doc("app/roster").onSnapshot(function(d){S.roster=d.exists?((d.data().list)||[]).slice():[];ok();rr()},er);
+    var cut=new Date();cut.setDate(cut.getDate()-190);
+    DB.collection("hist").onSnapshot(function(q){
+      var seen={},all=[];
+      q.docs.forEach(function(d){if(d.data().day<dayStr(cut))return;((d.data().items)||[]).forEach(function(a){if(!seen[a.id]){seen[a.id]=1;all.push(a)}})});
+      all.sort(function(x,y){return y.end-x.end});S.done=all;ok();render();stats();
+    },er);
+  }
 })();
 // Clear records (manager only)
 (function(){
@@ -444,14 +488,14 @@ rr();render();stats();setInterval(render,1000);
     if(u&&pl){pl=false;lg("Signed in","")}
   });
 })();
-  // Refresh button
+// Refresh button
 (function(){
   var b=document.createElement("button");b.type="button";b.className="ghost";b.textContent="Refresh";
   b.style.cssText="position:fixed;top:calc(8px + env(safe-area-inset-top,0px));right:12px;z-index:40;padding:8px 14px;background:var(--bg)";
   b.onclick=function(){location.href=location.pathname+"?v="+Date.now()};
   document.body.appendChild(b);
 })();
-  // Picker statistics in its own window
+// Picker statistics in its own window
 (function(){
   var seg=$("st").previousElementSibling,head=seg.previousElementSibling,exp=$("cp").parentNode,ta=$("ta");
   var md=document.createElement("div");md.hidden=true;
@@ -466,7 +510,7 @@ rr();render();stats();setInterval(render,1000);
   $("sb").onclick=function(){md.hidden=false;document.body.style.overflow="hidden";stats()};
   $("sc").onclick=function(){md.hidden=true;document.body.style.overflow=""};
 })();
-  // Records in their own window
+// Records in their own window
 (function(){
   var bt=$("vd").parentNode,head=bt.previousElementSibling,vi=$("vi"),rv=$("rv");
   var md=document.createElement("div");md.hidden=true;
@@ -480,6 +524,42 @@ rr();render();stats();setInterval(render,1000);
   $("so").parentNode.insertAdjacentElement("afterend",w);
   $("rb").onclick=function(){md.hidden=false;document.body.style.overflow="hidden";stats()};
   $("rc").onclick=function(){md.hidden=true;document.body.style.overflow=""};
+})();
+// Staff access (manager only)
+(function(){
+  var list=[],unsub=null,ME=null;
+  var w=document.createElement("div");w.className="row";w.hidden=true;
+  w.innerHTML='<button id="stb" type="button">Staff access</button>';
+  $("so").parentNode.insertAdjacentElement("afterend",w);
+  var md=document.createElement("div");md.hidden=true;
+  md.style.cssText="position:fixed;top:0;right:0;bottom:0;left:0;z-index:50;background:var(--bg);color:var(--ink);overflow:auto;padding:calc(16px + env(safe-area-inset-top,0px)) 16px calc(16px + env(safe-area-inset-bottom,0px))";
+  md.innerHTML='<div style="max-width:720px;margin:0 auto"><div class="row" style="margin:0 0 10px"><h1 style="margin:0">Staff access</h1><button id="sx" type="button" class="ghost">Close</button></div><div class="meta" style="margin-bottom:8px">Add the email of each supervisor. They open the app, tap "First time? Create my password", and choose their own password. Remove an email to cut their access immediately.</div><input id="sm" type="email" placeholder="supervisor@email.com" autocomplete="off"><div class="row"><button id="sa" type="button">Give access</button></div><div id="sl"></div></div>';
+  document.body.appendChild(md);
+  function draw(){
+    $("sl").innerHTML=list.length?list.map(function(x){return '<div class="h"><span>'+esc(x.email)+'</span><button class="ghost" data-e="'+esc(x.email)+'" type="button">Remove</button></div>'}).join(""):'<div class="empty">No supervisors added yet.</div>';
+  }
+  $("sa").onclick=function(){
+    var em=$("sm").value.trim().toLowerCase();
+    if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)){alert("Type a valid email address.");return}
+    if(!DB||!ME)return;
+    DB.doc("staff/"+em).set({email:em,by:ME.email,at:Date.now()}).then(function(){lg("Gave access to supervisor",em);$("sm").value=""}).catch(dbe);
+  };
+  $("sl").onclick=function(e){
+    var b=e.target.closest("button");if(!b||!DB)return;
+    var em=b.dataset.e;
+    if(!confirm("Remove access for "+em+"? They will be locked out immediately."))return;
+    DB.doc("staff/"+em).delete().then(function(){lg("Removed supervisor access",em)}).catch(dbe);
+  };
+  $("stb").onclick=function(){md.hidden=false;document.body.style.overflow="hidden";draw()};
+  $("sx").onclick=function(){md.hidden=true;document.body.style.overflow=""};
+  firebase.auth().onAuthStateChanged(function(u){
+    ME=u;var adm=!!u&&(u.email||"").toLowerCase()===MGR;w.hidden=!adm;
+    if(adm&&!unsub&&DB){
+      unsub=DB.collection("staff").onSnapshot(function(q){
+        list=q.docs.map(function(d){return d.data()}).sort(function(a,b){return a.email<b.email?-1:1});draw();
+      },function(){});
+    }
+  });
 })();
 </script>
 </body>
