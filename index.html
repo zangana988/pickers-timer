@@ -570,7 +570,7 @@ rr();render();stats();setInterval(render,1000);
 // Security: no self-registration, auto sign-out when idle
 (function(){
   $("lreg").hidden=true;
-  var rg=$("rg");if(rg)rg.remove();
+  var rg=$("rg");if(rg)rg.style.display="none";
   $("lk").style.justifyContent="flex-start";
   $("lfp").textContent="First time or forgot password? Email me a link to set my password";
   var sx=$("sx");
