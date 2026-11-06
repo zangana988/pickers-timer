@@ -245,6 +245,35 @@ rr();render();stats();setInterval(render,1000);
     all.sort(function(x,y){return y.end-x.end});S.done=all;ok();render();stats();
   },er);
 })();
+  // Clear records (manager only)
+(function(){
+  var ADMIN="mohammedmedht1@gmail.com";
+  firebase.auth().onAuthStateChanged(function(u){
+    var old=$("clrw");if(old)old.remove();
+    if(!u||(u.email||"").toLowerCase()!==ADMIN)return;
+    var r=document.createElement("div");r.id="clrw";r.style.marginTop="10px";
+    r.innerHTML='<button class="ghost" id="clr" type="button">Clear all finished records (manager)</button><div id="clp" hidden style="margin-top:8px"><input id="cpw" type="password" autocomplete="current-password" placeholder="Type your password"><button id="cgo" type="button" style="margin-top:8px">Confirm and delete everything</button></div>';
+    $("so").parentNode.insertAdjacentElement("afterend",r);
+    $("clr").onclick=function(){$("clp").hidden=!$("clp").hidden};
+    $("cgo").onclick=function(){
+      var pw=$("cpw").value;if(!pw)return;
+      var cred=firebase.auth.EmailAuthProvider.credential(u.email,pw);
+      u.reauthenticateWithCredential(cred).then(function(){
+        if(!confirm("This permanently deletes ALL finished-order records for everyone. Export to Excel first. Continue?"))return;
+        if(prompt("Type DELETE to confirm")!=="DELETE"){alert("Nothing was deleted.");return}
+        return DB.collection("hist").get().then(function(q){
+          var docs=q.docs,jobs=[];
+          for(var i=0;i<docs.length;i+=400){
+            var b=DB.batch();docs.slice(i,i+400).forEach(function(d){b.delete(d.ref)});jobs.push(b.commit());
+          }
+          return Promise.all(jobs);
+        }).then(function(){alert("All finished records were deleted.")});
+      }).catch(function(e){
+        alert(e&&e.code&&e.code.indexOf("auth/")===0?"Not deleted. Wrong password.":"Not deleted: "+((e&&e.message)||e));
+      }).then(function(){$("cpw").value="";$("clp").hidden=true});
+    };
+  });
+})();
 </script>
 </body>
 </html>
