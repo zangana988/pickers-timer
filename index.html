@@ -799,6 +799,190 @@ rr();render();stats();setInterval(render,1000);
   var xb=$("xb");if(xb)xb.className="";
   firebase.auth().onAuthStateChanged(function(u){g2.hidden=!(u&&(u.email||"").toLowerCase()===MGR)});
 })();
+  // Smart features: per-picker suggestions, sound alerts, forgotten timers, dashboard, offline mode
+(function(){
+  var MODAL="position:fixed;top:0;right:0;bottom:0;left:0;z-index:50;background:var(--bg);color:var(--ink);overflow:auto;padding:calc(16px + env(safe-area-inset-top,0px)) 16px calc(16px + env(safe-area-inset-bottom,0px))";
+  var D=86400000;
+
+  // ---------- 1. Offline mode ----------
+  try{if(DB&&DB.enablePersistence)DB.enablePersistence({synchronizeTabs:true}).catch(function(){})}catch(e){}
+  finish=function(id){
+    var i=S.active.findIndex(function(x){return x.id===id});
+    if(i<0||!DB||fin[id])return;fin[id]=1;
+    var a=Object.assign({},S.active[i]);a.end=Date.now();a.doneBy=me();
+    var day=dayStr(new Date(a.end)),took=a.end-a.start,b=DB.batch();
+    b.set(DB.doc("hist/"+day+"_"+hk(a.name)),{day:day,name:a.name,items:firebase.firestore.FieldValue.arrayUnion(a)},{merge:true});
+    b.delete(DB.doc("active/"+id));
+    b.commit().catch(function(e){delete fin[id];dbe(e)});
+    lg("Finished order",a.name+(a.order?" · order #"+a.order:"")+" · "+fmt(took)+(took>a.mins*60000?" ("+fmt(took-a.mins*60000)+" over)":" ("+fmt(a.mins*60000-took)+" early)"));
+  };
+  var ob=document.createElement("div");ob.id="ofb";ob.hidden=true;
+  ob.style.cssText="position:fixed;left:0;right:0;bottom:0;z-index:70;padding:10px 14px calc(10px + env(safe-area-inset-bottom,0px));background:#b45309;color:#fff;font-weight:600;text-align:center";
+  ob.textContent="Offline: your actions are saved and will sync when the connection returns";
+  document.body.appendChild(ob);
+  var offT=null;
+  function setOff(v){if(v){if(!offT)offT=setTimeout(function(){ob.hidden=false},4000)}else{clearTimeout(offT);offT=null;ob.hidden=true}}
+  window.addEventListener("offline",function(){setOff(true)});
+  window.addEventListener("online",function(){setOff(false)});
+  var netUnsub=null;
+  setInterval(function(){
+    if(netUnsub||!DB||!firebase.auth().currentUser)return;
+    try{netUnsub=DB.collection("active").onSnapshot({includeMetadataChanges:true},function(q){setOff(q.metadata.fromCache)},function(){netUnsub=null})}catch(e){}
+  },5000);
+
+  // ---------- 2. Smarter suggestions per picker ----------
+  function ratios(list){return list.slice(0,25).map(function(a){return (a.end-a.start)/1000/a.est}).filter(function(r){return r>0.2&&r<3})}
+  function sum(a){return a.reduce(function(x,y){return x+y},0)}
+  function pf(name){
+    var all=S.done.filter(function(a){return a.est&&a.end>a.start});
+    var g=ratios(all),gm=g.length>=3?sum(g)/g.length:1;
+    var o=name?ratios(all.filter(function(a){return a.name===name})):[];
+    if(!o.length)return{f:Math.min(2,Math.max(0.5,gm)),own:0,g:g.length};
+    return{f:Math.min(2,Math.max(0.5,(sum(o)+3*gm)/(o.length+3))),own:o.length,g:g.length};
+  }
+  upd=function(){
+    var c=boxes(),n=c[0];
+    if(!n){$("sg").textContent="Enter the boxes to get a suggested time.";return}
+    var name=$("n").value,p=pf(name),m=Math.max(1,Math.ceil(est(c)*p.f*1.15/60));
+    $("m").value=m;
+    var why=p.own>=3?"based on "+name+"'s last "+p.own+" orders":p.own>0?"mostly standard, still learning from "+name+"'s "+p.own+" orders":p.g>=3?"based on the team's last "+p.g+" orders":"standard estimate until there are 3 finished orders";
+    $("sg").textContent="Suggested: "+m+" min for "+n+" boxes ("+why+").";
+  };
+  $("b").oninput=upd;$("t").onchange=upd;$("n").addEventListener("change",upd);
+
+  // ---------- 3. Sound alerts ----------
+  var snd=false,ac=null;
+  try{snd=localStorage.getItem("snd")==="1"}catch(e){}
+  function AC(){return window.AudioContext||window.webkitAudioContext}
+  function unlock(){if(!snd||!AC())return;try{ac=ac||new (AC())();if(ac.state==="suspended")ac.resume()}catch(e){}}
+  ["click","touchstart"].forEach(function(ev){document.addEventListener(ev,unlock,true)});
+  function beep(times,long){
+    if(!snd)return;
+    try{
+      unlock();
+      for(var i=0;i<times;i++){
+        var o=ac.createOscillator(),g=ac.createGain(),t=ac.currentTime+i*(long?0.55:0.25);
+        o.type="square";o.frequency.value=long?520:880;o.connect(g);g.connect(ac.destination);
+        g.gain.setValueAtTime(0.0001,t);g.gain.exponentialRampToValueAtTime(0.35,t+0.02);g.gain.exponentialRampToValueAtTime(0.0001,t+(long?0.45:0.18));
+        o.start(t);o.stop(t+(long?0.5:0.2));
+      }
+    }catch(e){}
+    try{if(navigator.vibrate)navigator.vibrate(long?[300,100,300]:[150])}catch(e){}
+  }
+  var sbtns=[];
+  function paintSnd(){sbtns.forEach(function(b){b.textContent="🔔 Sound alerts: "+(snd?"On":"Off")})}
+  function toggleSnd(){snd=!snd;try{localStorage.setItem("snd",snd?"1":"0")}catch(e){}paintSnd();if(snd){unlock();beep(1,false)}}
+  var g1=document.querySelector("#bottombar .bg:nth-child(1) .bgrid"),g2=document.querySelector("#bottombar .bg:nth-child(2) .bgrid");
+  var sr=document.createElement("div");sr.className="row";sr.innerHTML='<button id="snb" type="button" class="ghost"></button>';
+  (g1||$("so").parentNode.parentNode).appendChild(sr);
+  sbtns.push($("snb"));$("snb").onclick=toggleSnd;
+  var dc=$("dclk");
+  if(dc){
+    var b2=document.createElement("button");b2.type="button";b2.className="ghost";b2.style.cssText="padding:6px 12px;font-size:14px";
+    b2.onclick=toggleSnd;sbtns.push(b2);dc.insertAdjacentElement("beforebegin",b2);
+    var nt=document.createElement("div");nt.className="meta";nt.style.cssText="font-size:16px;color:var(--bad)";nt.textContent="Tap the screen once to turn sound on";nt.hidden=true;
+    dc.insertAdjacentElement("beforebegin",nt);
+    setInterval(function(){nt.hidden=!(snd&&(!ac||ac.state!=="running"))},1000);
+  }
+  paintSnd();
+  var seen={};
+  setInterval(function(){
+    var now=Date.now(),alive={};
+    S.active.forEach(function(a){
+      var tot=a.mins*60000,left=tot-(now-a.start),st=left<0?2:(left<=tot*0.2?1:0),s=seen[a.id];
+      alive[a.id]=1;
+      if(!s){seen[a.id]={st:st,last:now};return}
+      if(st>s.st){s.st=st;s.last=now;beep(st===2?3:2,st===2)}
+      else if(st===2&&now-s.last>120000){s.last=now;beep(2,true)}
+    });
+    Object.keys(seen).forEach(function(k){if(!alive[k])delete seen[k]});
+  },1000);
+
+  // ---------- 4. Forgotten timers ----------
+  var fb=document.createElement("div");fb.id="fgt";fb.hidden=true;
+  fb.style.cssText="background:var(--badbg);border:2px solid var(--bad);border-radius:12px;padding:10px 12px;margin:0 0 12px";
+  $("ap").insertBefore(fb,$("f"));
+  var fsig="";
+  function fg(){
+    var now=Date.now(),list=S.active.filter(function(a){var el=now-a.start,al=a.mins*60000;return el>2*al&&el-al>=600000});
+    if(!list.length){fsig="";fb.hidden=true;return}
+    var sig=list.map(function(a){return a.id}).join(",")+"@"+Math.floor(now/60000);
+    if(sig===fsig)return;fsig=sig;fb.hidden=false;
+    fb.innerHTML='<div style="font-weight:700;margin-bottom:6px">Possibly forgotten timers</div>'+list.map(function(a){
+      return '<div class="h" style="align-items:center"><span><b>'+esc(a.name)+'</b>'+(a.order?' · #'+esc(a.order):'')+'<br><span class="meta">running '+Math.round((now-a.start)/60000)+' min, given '+a.mins+' min</span></span><span style="display:flex;gap:6px"><button data-fa="f" data-id="'+a.id+'" type="button">Finish</button><button class="ghost" data-fa="x" data-id="'+a.id+'" type="button">Remove</button></span></div>';
+    }).join("")+'<div class="meta" style="margin-top:6px">If the order was finished long ago, tap Remove so it does not spoil the statistics.</div>';
+  }
+  fb.onclick=function(e){var b=e.target.closest("button");if(!b)return;var id=+b.dataset.id;b.dataset.fa==="f"?finish(id):cancel(id)};
+  setInterval(fg,5000);fg();
+
+  // ---------- 5. Manager dashboard ----------
+  var dm=document.createElement("div");dm.hidden=true;dm.style.cssText=MODAL;
+  dm.innerHTML='<div style="max-width:900px;margin:0 auto"><div class="row" style="margin:0 0 10px"><h1 style="margin:0">Dashboard</h1><button id="dbx" type="button" class="ghost">Close</button></div><div id="dbd"></div></div>';
+  document.body.appendChild(dm);
+  var dr=document.createElement("div");dr.className="row";dr.innerHTML='<button id="dbb" type="button">Dashboard</button>';
+  (g2||$("so").parentNode.parentNode).appendChild(dr);
+  function agg(list){var r={n:0,b:0,s:0,sb:0,bs:0,ok:0};list.forEach(function(a){var s=(a.end-a.start)/1000;r.n++;r.b+=a.boxes||0;r.s+=s;if(a.boxes){r.sb+=s;r.bs+=a.boxes}if(s<=a.mins*60)r.ok++});return r}
+  function pct(r){return r.n?Math.round(r.ok/r.n*100):0}
+  function bph(r){return r.s?Math.round(r.b/(r.s/3600)):0}
+  function bars(vals,labs,unit){
+    var w=320,h=110,n=vals.length,bw=w/n,mx=Math.max.apply(null,vals.concat([1]));
+    var s='<svg viewBox="0 0 '+w+' '+(h+18)+'" style="width:100%;max-width:560px">';
+    vals.forEach(function(v,i){
+      var bh=Math.round(v/mx*h);
+      s+='<rect x="'+(i*bw+3)+'" y="'+(h-bh)+'" width="'+(bw-6)+'" height="'+bh+'" rx="3" style="fill:var(--ok)"/><text x="'+(i*bw+bw/2)+'" y="'+(h+13)+'" font-size="9" text-anchor="middle" style="fill:var(--mute)">'+labs[i]+'</text>';
+      if(v)s+='<text x="'+(i*bw+bw/2)+'" y="'+(h-bh-3)+'" font-size="9" text-anchor="middle" style="fill:var(--ink)">'+v+unit+'</text>';
+    });
+    return s+'</svg>';
+  }
+  function card(t,v,sub){return '<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px"><div class="meta">'+t+'</div><div style="font-size:28px;font-weight:800">'+v+'</div><div class="meta">'+sub+'</div></div>'}
+  function dash(){
+    var now=Date.now(),today=dayStr(new Date()),clean=[],sus=[];
+    S.done.forEach(function(a){((a.end-a.start)<=3*a.mins*60000?clean:sus).push(a)});
+    var t=agg(clean.filter(function(a){return dayStr(new Date(a.end))===today}));
+    var past=clean.filter(function(a){return dayStr(new Date(a.end))!==today&&a.end>now-30*D});
+    var dset={};past.forEach(function(a){dset[dayStr(new Date(a.end))]=1});
+    var nd=Object.keys(dset).length,p=agg(past);
+    function usual(v,avg,unit){return nd?"usual "+Math.round(avg)+unit+" ("+(v>=avg?"+":"")+Math.round(v-avg)+unit+")":"no history yet"}
+    var h='<h2 style="margin-top:0">Today</h2><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px">'
+      +card("Orders finished",t.n,usual(t.n,nd?p.n/nd:0,""))
+      +card("Boxes",t.b,usual(t.b,nd?p.b/nd:0,""))
+      +card("Finished on time",pct(t)+"%",usual(pct(t),pct(p),"%"))
+      +card("Boxes per picker-hour",bph(t),usual(bph(t),bph(p),""))+'</div>';
+    var A=clean.filter(function(a){return a.end>now-30*D}),B=clean.filter(function(a){return a.end<=now-30*D&&a.end>now-60*D});
+    var names={};A.concat(B).forEach(function(a){names[a.name]=1});
+    var rowsP=[],ins=[],best=null,worst=null,late=null;
+    Object.keys(names).forEach(function(n){
+      var a=agg(A.filter(function(x){return x.name===n})),b=agg(B.filter(function(x){return x.name===n})),ch=null;
+      if(a.bs&&b.bs&&a.n>=5&&b.n>=5){ch=((a.sb/a.bs)-(b.sb/b.bs))/(b.sb/b.bs)*100}
+      if(ch!==null){if(ch<=-5&&(!best||ch<best.ch))best={n:n,ch:ch};if(ch>=5&&(!worst||ch>worst.ch))worst={n:n,ch:ch}}
+      if(a.n>=5&&pct(a)<70&&(!late||pct(a)<late.p))late={n:n,p:pct(a),k:a.n-a.ok,t:a.n};
+      rowsP.push({n:n,a:a,ch:ch});
+    });
+    rowsP.sort(function(x,y){return y.a.n-x.a.n});
+    var hrs={};A.forEach(function(a){var k=new Date(a.end).getHours();hrs[k]=(hrs[k]||0)+1});
+    var top=Object.keys(hrs).sort(function(x,y){return hrs[y]-hrs[x]})[0];
+    if(best)ins.push(best.n+" is "+Math.round(-best.ch)+"% faster per box than in the previous 30 days.");
+    if(worst)ins.push(worst.n+" is "+Math.round(worst.ch)+"% slower per box than in the previous 30 days.");
+    if(late)ins.push(late.n+" finished late on "+late.k+" of "+late.t+" orders in the last 30 days.");
+    if(top!==undefined)ins.push("Busiest time: "+pad(+top)+":00 to "+pad((+top+1)%24)+":00 ("+hrs[top]+" orders in 30 days).");
+    if(sus.length)ins.push(sus.length+" order"+(sus.length>1?"s":"")+" took more than 3 times the time given (probably forgotten timers). They are left out of these numbers.");
+    h+='<h2>Insights</h2>'+(ins.length?'<ul style="margin:0;padding-left:20px;line-height:1.6">'+ins.map(function(x){return '<li>'+esc(x)+'</li>'}).join("")+'</ul>':'<div class="empty">Not enough finished orders yet. Insights appear after a few days of use.</div>');
+    var v1=[],l1=[];
+    for(var i=13;i>=0;i--){var d=new Date(now-i*D),k=dayStr(d);v1.push(agg(clean.filter(function(a){return dayStr(new Date(a.end))===k})).b);l1.push(d.getDate())}
+    var v2=[],l2=[];
+    for(var j=7;j>=0;j--){var lo=now-(j+1)*7*D,hi=now-j*7*D,dd=new Date(hi);v2.push(pct(agg(clean.filter(function(a){return a.end>lo&&a.end<=hi}))));l2.push(dd.getDate()+"/"+(dd.getMonth()+1))}
+    h+='<h2>Boxes per day (last 14 days)</h2>'+bars(v1,l1,"")+'<h2>Finished on time, per week (last 8 weeks, %)</h2>'+bars(v2,l2,"");
+    h+='<h2>Pickers: last 30 days compared with the 30 days before</h2><div class="sc"><table><tr><th>Picker</th><th>Orders</th><th>Boxes</th><th>Sec per box</th><th>Speed change</th><th>On time</th></tr>'
+      +(rowsP.map(function(r){
+        var a=r.a,tr=r.ch===null?"–":(r.ch<=-5?'<span style="color:var(--ok)">▲ '+Math.round(-r.ch)+'% faster</span>':r.ch>=5?'<span style="color:var(--bad)">▼ '+Math.round(r.ch)+'% slower</span>':"steady");
+        return '<tr><td>'+esc(r.n)+'</td><td>'+a.n+'</td><td>'+a.b+'</td><td>'+(a.bs?Math.round(a.sb/a.bs):"–")+'</td><td>'+tr+'</td><td>'+(a.n?pct(a)+"%":"–")+'</td></tr>';
+      }).join("")||'<tr><td colspan="6" class="empty">No finished orders yet.</td></tr>')+'</table></div>';
+    $("dbd").innerHTML=h;
+  }
+  $("dbb").onclick=function(){dm.hidden=false;document.body.style.overflow="hidden";dash()};
+  $("dbx").onclick=function(){dm.hidden=true;document.body.style.overflow=""};
+  var _s6=stats;stats=function(){_s6();if(!dm.hidden)dash()};
+})();
 </script>
 </body>
 </html>
