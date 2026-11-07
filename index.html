@@ -634,6 +634,106 @@ rr();render();stats();setInterval(render,1000);
   wake();document.addEventListener("visibilitychange",function(){if(!document.hidden)wake()});
   setTimeout(function(){location.reload()},6*60*60*1000);
 })();
+  // Orders table with filters + Excel (.xlsx) export, inside Picker statistics
+(function(){
+  var C=["Date","Picker","Order","Boxes","Start","End","Allowed min","Actual min","Difference min (+ early, - over)","On time","Sec per box","Assigned by","Finished by"];
+  var NUM={3:1,6:1,7:1,8:1,10:1},sortC=0,sortD=-1;
+  var box=document.createElement("div");
+  box.innerHTML='<h2>All orders (type in the boxes to filter)</h2><div class="meta" style="margin-bottom:6px">Type part of a name or date in a box, for example 2026-11 for a month. For numbers type &gt;5 or &lt;0. Tap a column title to sort. The Excel file contains the rows you see, with filters on every column.</div><div class="sc" style="max-height:60vh;overflow:auto"><table id="ott"><thead><tr id="oth"></tr><tr id="ofl"></tr></thead><tbody id="otb"></tbody></table></div><div id="otf" class="meta" style="margin:8px 0"></div><div class="row"><button id="oxl" type="button">Download Excel (.xlsx)</button></div>';
+  $("sbody").appendChild(box);
+  $("ofl").innerHTML=C.map(function(c,i){return '<th><input data-f="'+i+'" style="font-size:13px;padding:5px;min-width:76px" autocomplete="off"></th>'}).join("");
+  function rowsAll(){
+    return S.done.map(function(a){
+      var d=new Date(a.end),m=(a.end-a.start)/60000;
+      return [dayStr(d),a.name,a.order||"",a.boxes||0,tm(a.start),tm(a.end),a.mins,+m.toFixed(1),+(a.mins-m).toFixed(1),m<=a.mins?"Yes":"No",a.boxes?Math.round(m*60/a.boxes):"",a.by?who(a.by):"",a.doneBy?who(a.doneBy):""];
+    });
+  }
+  function ok(v,f){
+    f=f.trim().toLowerCase();if(!f)return true;
+    var m=f.match(/^(>=|<=|>|<|=)\s*(-?\d+(?:\.\d+)?)$/);
+    if(m){var x=parseFloat(v),n=parseFloat(m[2]);if(isNaN(x))return false;return m[1]===">"?x>n:m[1]==="<"?x<n:m[1]===">="?x>=n:m[1]==="<="?x<=n:x===n}
+    return String(v).toLowerCase().indexOf(f)>=0;
+  }
+  function filtered(){
+    var f=Array.prototype.map.call(document.querySelectorAll("#ofl input"),function(i){return i.value});
+    var r=rowsAll().filter(function(row){return row.every(function(v,i){return ok(v,f[i])})});
+    r.sort(function(a,b){var x=a[sortC],y=b[sortC];return (NUM[sortC]?(+x||0)-(+y||0):String(x).localeCompare(String(y)))*sortD});
+    return r;
+  }
+  function draw(){
+    $("oth").innerHTML=C.map(function(c,i){return '<th data-i="'+i+'" style="cursor:pointer;white-space:nowrap">'+esc(c)+(i===sortC?(sortD>0?" ▲":" ▼"):"")+'</th>'}).join("");
+    var r=filtered(),h="",bx=0,mn=0;
+    r.forEach(function(x){bx+=+x[3]||0;mn+=+x[7]||0});
+    r.slice(0,500).forEach(function(x){h+='<tr>'+x.map(function(v){return '<td style="white-space:nowrap">'+esc(v)+'</td>'}).join("")+'</tr>'});
+    $("otb").innerHTML=h||'<tr><td colspan="13" class="empty">No orders match.</td></tr>';
+    $("otf").textContent=r.length+" orders · "+bx+" boxes · average "+(r.length?(mn/r.length).toFixed(1):"0")+" min per order"+(r.length>500?" (showing the first 500; the Excel file has all of them)":"");
+  }
+  $("oth").onclick=function(e){
+    var t=e.target.closest("th");if(!t)return;
+    var i=+t.dataset.i;
+    if(i===sortC)sortD=-sortD;else{sortC=i;sortD=1}
+    draw();
+  };
+  $("ofl").oninput=draw;
+  var T=null;
+  function crc32(b){
+    if(!T){T=[];for(var n=0;n<256;n++){var c=n;for(var k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;T[n]=c>>>0}}
+    var c=0xFFFFFFFF;for(var i=0;i<b.length;i++)c=T[(c^b[i])&255]^(c>>>8);
+    return (c^0xFFFFFFFF)>>>0;
+  }
+  function u16(v){return [v&255,(v>>8)&255]}
+  function u32(v){return [v&255,(v>>8)&255,(v>>16)&255,(v>>24)&255]}
+  function zip(files){
+    var enc=new TextEncoder(),parts=[],cen=[],off=0;
+    files.forEach(function(f){
+      var nb=enc.encode(f.n),d=enc.encode(f.d),c=crc32(d),sz=d.length;
+      var lh=[].concat(u32(0x04034b50),u16(20),u16(0x0800),u16(0),u16(0),u16(0x21),u32(c),u32(sz),u32(sz),u16(nb.length),u16(0));
+      parts.push(new Uint8Array(lh),nb,d);
+      cen.push(new Uint8Array([].concat(u32(0x02014b50),u16(20),u16(20),u16(0x0800),u16(0),u16(0),u16(0x21),u32(c),u32(sz),u32(sz),u16(nb.length),u16(0),u16(0),u16(0),u16(0),u32(0),u32(off))),nb);
+      off+=lh.length+nb.length+sz;
+    });
+    var cl=0;cen.forEach(function(p){cl+=p.length});
+    var end=new Uint8Array([].concat(u32(0x06054b50),u16(0),u16(0),u16(files.length),u16(files.length),u32(cl),u32(off),u16(0)));
+    return new Blob(parts.concat(cen,[end]),{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
+  }
+  function xe(s){return String(s).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})}
+  function colL(i){return String.fromCharCode(65+i)}
+  function sheet(rows){
+    var x='<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><cols>';
+    [12,22,12,8,12,12,12,12,16,9,11,26,26].forEach(function(w,i){x+='<col min="'+(i+1)+'" max="'+(i+1)+'" width="'+w+'" customWidth="1"/>'});
+    x+='</cols><sheetData><row r="1">';
+    C.forEach(function(h,i){x+='<c r="'+colL(i)+'1" t="inlineStr" s="1"><is><t>'+xe(h)+'</t></is></c>'});
+    x+='</row>';
+    rows.forEach(function(r,n){
+      var rn=n+2;x+='<row r="'+rn+'">';
+      r.forEach(function(v,i){
+        var ref=colL(i)+rn;
+        if(i===0){var p=String(v).split("-");x+='<c r="'+ref+'" s="2"><v>'+Math.round((Date.UTC(+p[0],+p[1]-1,+p[2])-Date.UTC(1899,11,30))/86400000)+'</v></c>'}
+        else if(NUM[i]){if(v!==""&&v!==null)x+='<c r="'+ref+'"'+((i===7||i===8)?' s="3"':'')+'><v>'+(+v)+'</v></c>'}
+        else if(v!==""){x+='<c r="'+ref+'" t="inlineStr"><is><t xml:space="preserve">'+xe(v)+'</t></is></c>'}
+      });
+      x+='</row>';
+    });
+    return x+'</sheetData><autoFilter ref="A1:M'+(rows.length+1)+'"/></worksheet>';
+  }
+  $("oxl").onclick=function(){
+    var rows=filtered(),n=rows.length+1,ns='xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"';
+    var blob=zip([
+      {n:"[Content_Types].xml",d:'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>'},
+      {n:"_rels/.rels",d:'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>'},
+      {n:"xl/workbook.xml",d:'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook '+ns+' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Orders" sheetId="1" r:id="rId1"/></sheets><definedNames><definedName name="_xlnm._FilterDatabase" localSheetId="0" hidden="1">Orders!$A$1:$M$'+n+'</definedName></definedNames></workbook>'},
+      {n:"xl/_rels/workbook.xml.rels",d:'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>'},
+      {n:"xl/styles.xml",d:'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet '+ns+'><numFmts count="2"><numFmt numFmtId="164" formatCode="yyyy\\-mm\\-dd"/><numFmt numFmtId="165" formatCode="0.0"/></numFmts><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="4"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>'},
+      {n:"xl/worksheets/sheet1.xml",d:sheet(rows)}
+    ]);
+    var name="picker-orders-"+dayStr(new Date())+".xlsx",f=null;
+    try{f=new File([blob],name,{type:blob.type})}catch(e){}
+    if(f&&navigator.canShare&&navigator.canShare({files:[f]})){navigator.share({files:[f]}).catch(function(){});return}
+    var a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();a.remove();
+  };
+  var _s5=stats;stats=function(){_s5();draw()};
+  draw();
+})();
 </script>
 </body>
 </html>
