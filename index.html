@@ -1091,6 +1091,55 @@ rr();render();stats();setInterval(render,1000);
   var _s7=stats;stats=function(){_s7();addCorr()};
   var dbb=$("dbb");if(dbb)dbb.addEventListener("click",addCorr);
 })();
+  // Two-minute check alert: full-screen flashing warning with Continue / Stop timer
+(function(){
+  if(new URLSearchParams(location.search).get("display")==="1")return;
+  var LEAD=120000,GRACE=300000,dismissed={},cur=null;
+  var st=document.createElement("style");
+  st.textContent="@keyframes chkflash{0%,100%{background:#c9261b}50%{background:#7f1510}}#chk{animation:chkflash 1s infinite}@media (prefers-reduced-motion:reduce){#chk{animation:none!important}}#chk button{font-size:24px;padding:18px 22px;border-radius:14px;min-width:250px}";
+  document.head.appendChild(st);
+  var ov=document.createElement("div");ov.id="chk";ov.hidden=true;
+  ov.style.cssText="position:fixed;top:0;right:0;bottom:0;left:0;z-index:100;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:20px;text-align:center;color:#fff;background:#c9261b;overflow:auto";
+  ov.innerHTML='<div style="font-size:22px;font-weight:800;letter-spacing:1px">CHECK THIS ORDER IN THE SYSTEM</div><div id="chn" style="font-size:clamp(40px,11vw,96px);font-weight:900;line-height:1.05"></div><div id="cho" style="font-size:clamp(22px,6vw,44px);font-weight:700"></div><div id="cht" style="font-size:clamp(64px,22vw,180px);font-weight:900;font-variant-numeric:tabular-nums;line-height:1"></div><div id="chm" style="font-size:22px;font-weight:700"></div><div style="display:flex;flex-wrap:wrap;gap:14px;justify-content:center"><button id="chc" type="button" style="background:#fff;color:#7f1510">Continue counting</button><button id="chs" type="button" style="background:#1b2220;color:#fff">Stop timer (order done)</button></div><div id="chq" style="font-size:18px"></div>';
+  document.body.appendChild(ov);
+  function pick(){
+    var now=Date.now();
+    return S.active.filter(function(a){var tot=a.mins*60000,left=tot-(now-a.start);return tot>LEAD&&left<=LEAD&&left>-GRACE&&!a.ack&&!dismissed[a.id]})
+      .sort(function(x,y){return (x.start+x.mins*60000)-(y.start+y.mins*60000)});
+  }
+  function paint(){
+    var c=pick();
+    if(!c.length){ov.hidden=true;cur=null;return}
+    var a=c[0],left=a.mins*60000-(Date.now()-a.start);
+    cur=a;ov.hidden=false;
+    $("chn").textContent=a.name;
+    $("cho").textContent=(a.order?"Order "+a.order:"")+(a.boxes?(a.order?" · ":"")+a.boxes+" boxes":"");
+    $("cht").textContent=(left<0?"+":"")+fmt(left);
+    $("chm").textContent=left<0?"Time is over":"Time left";
+    $("chq").textContent=c.length>1?(c.length-1)+" more order"+(c.length>2?"s":"")+" waiting for a check":"";
+  }
+  setInterval(paint,500);
+  $("chc").onclick=function(){
+    if(!cur||!DB)return;var a=cur;dismissed[a.id]=true;paint();
+    DB.doc("active/"+a.id).set({ack:{by:me(),at:Date.now()}},{merge:true}).catch(dbe);
+    lg("Checked order before time ended: continue counting",a.name+(a.order?" · order #"+a.order:""));
+  };
+  $("chs").onclick=function(){
+    if(!cur)return;var a=cur;dismissed[a.id]=true;paint();
+    lg("Checked order before time ended: stopped the timer",a.name+(a.order?" · order #"+a.order:""));
+    finish(a.id);
+  };
+  function snd(){try{return localStorage.getItem("snd")==="1"}catch(e){return false}}
+  var ctx=null,lastB=0;
+  function unlock(){try{var C=window.AudioContext||window.webkitAudioContext;if(C&&snd()){ctx=ctx||new C();if(ctx.state==="suspended")ctx.resume()}}catch(e){}}
+  ["click","touchstart"].forEach(function(ev){document.addEventListener(ev,unlock,true)});
+  setInterval(function(){
+    if(ov.hidden||!snd()||!ctx||Date.now()-lastB<4000)return;
+    lastB=Date.now();
+    try{for(var i=0;i<3;i++){var o=ctx.createOscillator(),g=ctx.createGain(),t=ctx.currentTime+i*0.3;o.type="square";o.frequency.value=900;o.connect(g);g.connect(ctx.destination);g.gain.setValueAtTime(0.0001,t);g.gain.exponentialRampToValueAtTime(0.4,t+0.02);g.gain.exponentialRampToValueAtTime(0.0001,t+0.2);o.start(t);o.stop(t+0.22)}}catch(e){}
+    try{if(navigator.vibrate)navigator.vibrate([300,100,300])}catch(e){}
+  },500);
+})();
 </script>
 </body>
 </html>
