@@ -592,6 +592,48 @@ rr();render();stats();setInterval(render,1000);
     if(u){paintWho();d.hidden=false}else{d.hidden=true}
   });
 })();
+  // Display mode for the pickers tablet (open the app with ?display=1) + display-only accounts
+(function(){
+  var sa=$("sa");
+  if(sa){
+    sa.parentNode.insertAdjacentHTML("beforebegin",'<label style="flex-direction:row;align-items:center;gap:8px;margin:8px 0"><input id="sd" type="checkbox" style="width:auto"> Display tablet only (read-only, for the pickers)</label>');
+    sa.onclick=function(){
+      var em=$("sm").value.trim().toLowerCase(),nm=$("sn").value.trim(),u=firebase.auth().currentUser;
+      if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)){alert("Type a valid email address.");return}
+      if(!DB||!u)return;
+      if(!nm){alert("Type the full name (first and last name).");return}
+      var role=$("sd").checked?"display":"staff";
+      var bt=DB.batch();
+      bt.set(DB.doc("staff/"+em),{email:em,name:nm,role:role,by:u.email,at:Date.now()});
+      bt.set(DB.doc("people/"+em),{email:em,name:nm});
+      bt.commit().then(function(){lg("Gave access / set name",nm+" · "+em+(role==="display"?" (display only)":""));$("sm").value="";$("sn").value="";$("sd").checked=false}).catch(dbe);
+    };
+  }
+  if(new URLSearchParams(location.search).get("display")!=="1")return;
+  var ov=document.createElement("div");ov.hidden=true;
+  ov.style.cssText="position:fixed;top:0;right:0;bottom:0;left:0;z-index:60;background:var(--bg);color:var(--ink);overflow:auto;padding:calc(14px + env(safe-area-inset-top,0px)) 16px calc(14px + env(safe-area-inset-bottom,0px))";
+  ov.innerHTML='<div class="row" style="margin:0 0 12px"><h1 style="margin:0;font-size:30px">In progress</h1><div id="dclk" style="font-size:30px;font-weight:700"></div></div><div id="dgrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:14px"></div><div class="row"><button id="dso" type="button" class="ghost" style="padding:6px 12px;font-size:13px;opacity:.6">Sign out</button></div>';
+  document.body.appendChild(ov);
+  $("dso").onclick=function(){if(confirm("Sign out this display?"))firebase.auth().signOut().then(function(){location.reload()})};
+  function paint(){
+    var u=firebase.auth().currentUser;
+    ov.hidden=!(u&&!$("ap").hidden);
+    if(ov.hidden)return;
+    var now=Date.now(),h="";
+    $("dclk").textContent=new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
+    S.active.slice().sort(function(x,y){return (x.start+x.mins*60000)-(y.start+y.mins*60000)}).forEach(function(a){
+      var tot=a.mins*60000,left=tot-(now-a.start),late=left<0,red=late||left<=tot*0.2;
+      var pct=Math.min(100,Math.max(0,(now-a.start)/tot*100));
+      h+='<div class="t'+(red?" red":"")+(late?" late":"")+'"><div style="font-size:30px;font-weight:800">'+esc(a.name)+'</div><div class="meta" style="font-size:18px">'+(a.order?"Order "+esc(a.order):"")+(a.boxes?(a.order?" · ":"")+a.boxes+" boxes":"")+'</div><div class="clock" style="font-size:clamp(40px,7vw,76px);white-space:nowrap">'+(late?"+":"")+fmt(left)+'</div><div class="bar" style="height:16px"><i style="width:'+pct+'%"></i></div><div class="meta" style="font-size:18px;margin-top:8px">Started '+new Date(a.start).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})+' · '+a.mins+' min'+(late?" · OVER TIME":"")+'</div></div>';
+    });
+    $("dgrid").innerHTML=h||'<div class="empty" style="font-size:24px">No orders in progress.</div>';
+  }
+  setInterval(paint,1000);paint();
+  setInterval(function(){document.dispatchEvent(new Event("click"))},60000);
+  function wake(){try{if(navigator.wakeLock)navigator.wakeLock.request("screen").catch(function(){})}catch(e){}}
+  wake();document.addEventListener("visibilitychange",function(){if(!document.hidden)wake()});
+  setTimeout(function(){location.reload()},6*60*60*1000);
+})();
 </script>
 </body>
 </html>
