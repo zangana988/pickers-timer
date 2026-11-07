@@ -983,6 +983,114 @@ rr();render();stats();setInterval(render,1000);
   $("dbx").onclick=function(){dm.hidden=true;document.body.style.overflow=""};
   var _s6=stats;stats=function(){_s6();if(!dm.hidden)dash()};
 })();
+  // Visible alerts, iPhone silent-mode fix, and time corrections
+(function(){
+  // ----- visible alerts (work even with sound off) -----
+  var tb=document.createElement("div");tb.id="tst";tb.hidden=true;
+  tb.style.cssText="position:fixed;left:10px;right:10px;top:calc(10px + env(safe-area-inset-top,0px));z-index:90;display:flex;flex-direction:column;gap:6px";
+  document.body.appendChild(tb);
+  function toast(msg,bad){
+    var d=document.createElement("div");
+    d.style.cssText="padding:12px 14px;border-radius:12px;font-weight:700;font-size:18px;color:#fff;box-shadow:0 6px 18px rgba(0,0,0,.35);background:"+(bad?"#bf2a1f":"#b45309");
+    d.textContent=msg;d.onclick=function(){d.remove();tb.hidden=!tb.children.length};
+    tb.appendChild(d);tb.hidden=false;
+    while(tb.children.length>3)tb.firstChild.remove();
+    setTimeout(function(){if(d.parentNode){d.remove();tb.hidden=!tb.children.length}},12000);
+  }
+  var seen2={};
+  setInterval(function(){
+    var now=Date.now(),alive={};
+    S.active.forEach(function(a){
+      var tot=a.mins*60000,left=tot-(now-a.start),st=left<0?2:(left<=tot*0.2?1:0),s=seen2[a.id];
+      alive[a.id]=1;
+      if(s===undefined){seen2[a.id]=st;return}
+      if(st>s){seen2[a.id]=st;toast((st===2?"⚠ Time is over: ":"⏰ Almost out of time: ")+a.name+(a.order?" (order "+a.order+")":""),st===2)}
+    });
+    Object.keys(seen2).forEach(function(k){if(!alive[k])delete seen2[k]});
+  },1000);
+
+  // ----- let sound play even when the iPhone silent switch is on -----
+  function wav(){
+    var n=800,b=new ArrayBuffer(44+n),v=new DataView(b);
+    function w(o,s){for(var i=0;i<s.length;i++)v.setUint8(o+i,s.charCodeAt(i))}
+    w(0,"RIFF");v.setUint32(4,36+n,true);w(8,"WAVE");w(12,"fmt ");v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);v.setUint32(24,8000,true);v.setUint32(28,8000,true);v.setUint16(32,1,true);v.setUint16(34,8,true);w(36,"data");v.setUint32(40,n,true);
+    for(var i=0;i<n;i++)v.setUint8(44+i,128);
+    return new Blob([b],{type:"audio/wav"});
+  }
+  var sa=null;
+  function keepAudio(){
+    try{if(navigator.audioSession)navigator.audioSession.type="playback"}catch(e){}
+    try{
+      var on=localStorage.getItem("snd")==="1";
+      if(!on){if(sa&&!sa.paused)sa.pause();return}
+      if(!sa){sa=new Audio(URL.createObjectURL(wav()));sa.loop=true;sa.setAttribute("playsinline","")}
+      if(sa.paused)sa.play().catch(function(){});
+    }catch(e){}
+  }
+  ["click","touchstart"].forEach(function(ev){document.addEventListener(ev,keepAudio,true)});
+
+  // ----- fix the time of a finished order (supervisor: today only, manager: any day) -----
+  var xlb=$("xl");
+  var xbn=$("xb");if(xbn)xbn.textContent="Fix or delete an order";
+  var xcb=$("xc");if(xcb){var h1=xcb.parentNode.querySelector("h1");if(h1)h1.textContent="Fix or delete an order"}
+  $("xd").insertAdjacentHTML("beforebegin",'<div class="meta" style="margin-bottom:8px">Tap Fix time if someone forgot to tap Finished. Every correction is recorded in History with the reason and the name of the person.</div>');
+  function addFix(){
+    Array.prototype.forEach.call(xlb.querySelectorAll(".h"),function(row){
+      var del=row.querySelector("button[data-x]");
+      if(!del||row.querySelector("button[data-fx]"))return;
+      var f=document.createElement("button");f.type="button";f.setAttribute("data-fx",del.getAttribute("data-x"));f.textContent="Fix time";
+      var box=document.createElement("span");box.style.cssText="display:flex;gap:6px;align-items:flex-start";
+      del.parentNode.insertBefore(box,del);box.appendChild(f);box.appendChild(del);
+    });
+  }
+  new MutationObserver(addFix).observe(xlb,{childList:true,subtree:true});addFix();
+  var _bl=byline;
+  byline=function(a){var s=_bl(a);if(a.fix)s+=(s?" · ":"")+"Time corrected by "+who(a.fix.by)+": "+a.fix.reason;return s};
+  xlb.addEventListener("click",function(e){
+    var bt=e.target.closest("button[data-fx]");if(!bt||!DB)return;
+    var u=firebase.auth().currentUser;if(!u)return;
+    var adm=(u.email||"").toLowerCase()===MGR;
+    var id=+bt.getAttribute("data-fx"),a=S.done.filter(function(o){return o.id===id})[0];if(!a)return;
+    var oldDay=dayStr(new Date(a.end));
+    if(!adm&&oldDay!==dayStr(new Date())){alert("Only the manager can correct orders from other days.");return}
+    var cur=(a.end-a.start)/60000;
+    var v=prompt("How many minutes did this order really take?\nGiven: "+a.mins+" min. Recorded now: "+cur.toFixed(1)+" min.",String(a.mins));
+    if(v===null)return;
+    var mins=parseFloat(String(v).replace(",","."));
+    if(!(mins>0&&mins<1000)){alert("Type the minutes as a number, for example 12");return}
+    var why=prompt("Reason for the correction (required). For example: forgot to tap Finished");
+    if(!why||!why.trim()){alert("A reason is required. Nothing was changed.");return}
+    var newEnd=a.start+Math.round(mins*60000);
+    if(newEnd>Date.now()+60000){alert("That time is in the future. Type fewer minutes.");return}
+    var fix={by:u.email,at:Date.now(),origEnd:(a.fix&&a.fix.origEnd)||a.end,reason:why.trim()};
+    var nu=Object.assign({},a,{end:newEnd,fix:fix}),newDay=dayStr(new Date(newEnd));
+    var oldRef=DB.doc("hist/"+oldDay+"_"+hk(a.name)),newRef=DB.doc("hist/"+newDay+"_"+hk(a.name));
+    oldRef.get().then(function(s){
+      var items=(s.exists?(s.data().items||[]):[]).filter(function(o){return o.id!==id}),b=DB.batch();
+      if(newDay===oldDay){items.push(nu);b.set(oldRef,{day:oldDay,name:a.name,items:items})}
+      else{b.set(oldRef,{day:oldDay,name:a.name,items:items});b.set(newRef,{day:newDay,name:a.name,items:firebase.firestore.FieldValue.arrayUnion(nu)},{merge:true})}
+      return b.commit();
+    }).then(function(){
+      lg("Corrected order time",a.name+(a.order?" · order #"+a.order:"")+" · "+cur.toFixed(1)+" min → "+mins+" min (given "+a.mins+" min) · "+(mins<=a.mins?"now on time":"still late")+" · reason: "+why.trim());
+    }).catch(dbe);
+  });
+
+  // ----- show the manager how many corrections were made (inside the Dashboard) -----
+  function addCorr(){
+    var d=$("dbd");if(!d||!d.offsetParent||d.querySelector("#corr"))return;
+    var lim=Date.now()-30*86400000,list=S.done.filter(function(a){return a.fix&&a.fix.at>lim}),by={};
+    list.forEach(function(a){var k=a.fix.by,r=by[k]||(by[k]={n:0,m:0});r.n++;r.m+=Math.max(0,((a.fix.origEnd-a.start)-(a.end-a.start))/60000)});
+    var h='<div id="corr"><h2>Time corrections (last 30 days)</h2>';
+    if(!list.length)h+='<div class="empty">No corrections.</div>';
+    else{
+      h+='<div class="sc"><table><tr><th>Corrected by</th><th>Orders</th><th>Minutes removed</th></tr>'+Object.keys(by).map(function(k){return '<tr><td>'+esc(who(k))+'</td><td>'+by[k].n+'</td><td>'+Math.round(by[k].m)+'</td></tr>'}).join("")+'</table></div>';
+      h+=list.slice(0,5).map(function(a){return '<div class="h"><span><b>'+esc(a.name)+'</b>'+(a.order?' · #'+esc(a.order):'')+'<br><span class="meta">'+Math.round((a.fix.origEnd-a.start)/60000)+' → '+Math.round((a.end-a.start)/60000)+' min · '+esc(a.fix.reason)+'</span></span><span class="meta">'+esc(who(a.fix.by))+'</span></div>'}).join("");
+    }
+    d.insertAdjacentHTML("beforeend",h+'</div>');
+  }
+  var _s7=stats;stats=function(){_s7();addCorr()};
+  var dbb=$("dbb");if(dbb)dbb.addEventListener("click",addCorr);
+})();
 </script>
 </body>
 </html>
